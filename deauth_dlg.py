@@ -9,12 +9,36 @@ from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QCol
 from PyQt5.QtCore import Qt, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
 
 import sys
+import csv
 import threading
+import json
 
 from scapy.all import *
 
 import wifi_manager
 import dot11_utils
+
+def load_oui_database(filename):
+	oui_dict = {}
+	
+	if not os.path.exists(filename):
+		print(f"Файл {filename} не найден")
+		sys.exit(1)
+	
+	with open(filename, newline='', encoding='utf-8') as csvfile:
+		reader = csv.reader(csvfile)
+		for row in reader:
+			if len(row) >= 3:
+				oui = row[1].upper()
+				vendor = row[2].strip()
+				oui_dict[oui] = vendor
+	return oui_dict
+
+def get_vendor_from_mac(mac_address: str, oui_dict: dict) -> str:
+	mac_prefix = mac_address.upper().replace(":", "").replace("-", "").replace(".", "")[:6]  # Приводим к формату 08EA44
+	return oui_dict.get(mac_prefix, "Unknown")
+
+oui_database = load_oui_database('data/oui.csv')
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
@@ -72,6 +96,8 @@ class DeauthDialog(QDialog):
 			9: "Station requesting (re)association is not authenticated with responding station",
 			34: "Deauthenticated because of 802.1X authentication failed"
 		}
+		
+		self.stations = {}
 
 		self.setWindowTitle(f"Мониторинг сети ya_setko")
 		self.setGeometry(200, 200, 1200, 560)
@@ -184,11 +210,11 @@ class DeauthDialog(QDialog):
 		
 		self.stations_table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
-		self.model.setHorizontalHeaderLabels(['MAC', 'Vendor', 'RSSI', 'Frames', 'Rate', 'Modulation'])
+		self.model.setHorizontalHeaderLabels(['MAC', 'Vendor', 'RSSI', 'Frames', 'ACKs', 'Rate', 'Modulation'])
 
 		self.stations_table.setModel(self.model)
 		self.stations_table.horizontalHeader().setStretchLastSection(True)
-		self.stations_table.setEditTriggers(QTableView.NoEditTriggers)
+		self.stations_table.setEditTriggers(QTableView.NoEditTriggers)	
 		self.stations_table.setShowGrid(False)
 		self.stations_table.verticalHeader().setVisible(False)
 		self.stations_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -197,21 +223,9 @@ class DeauthDialog(QDialog):
 		self.stations_table.setItemDelegateForColumn(2, self.progress_delegate)
 		self.stations_table.setIconSize(QSize(32, 32))
 		
-		row = []
-		row.append(QStandardItem(QIcon('icons/signal.png'), '80:32:44:ce:5d:fe'))
-		row.append(QStandardItem('Intel Corporation'))
-		row.append(QStandardItem('-54'))
-		row.append(QStandardItem('418'))
-		row.append(QStandardItem('24 mB/s'))
-		row.append(QStandardItem('64-QAM MIMO'))
-		self.model.appendRow(row)
-		
-		row_number = self.model.rowCount() -1
-		self.stations_table.setRowHeight(row_number, 40)
-		
-		self.stations_table.setColumnWidth(0, 150)
-		self.stations_table.setColumnWidth(1, 220)
-		self.stations_table.setColumnWidth(2, 300)
+		self.stations_table.setColumnWidth(0, 200)
+		self.stations_table.setColumnWidth(1, 300)
+		self.stations_table.setColumnWidth(2, 320)
 		self.stations_table.setColumnWidth(3, 55)
 		self.stations_table.setColumnWidth(4, 80)
 		
@@ -226,9 +240,9 @@ class DeauthDialog(QDialog):
 		self.setLayout(main_layout)
 		
 		self.interface = 'radio0mon'
-		self.bssid = '04:5E:A4:6A:28:47'.lower()
+		self.bssid = 'D2:AF:7D:6E:40:2A'.lower()
 		self.BSSID = self.bssid.upper()
-		self.channel = 11
+		self.channel = 12
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		
@@ -248,6 +262,12 @@ class DeauthDialog(QDialog):
 	
 	def safe_update_ap_beacons(self, beacons):
 		QMetaObject.invokeMethod(self, "_update_ap_beacons", Qt.QueuedConnection, Q_ARG(int, beacons))
+		
+	def safe_add_station(self, json_data):
+		QMetaObject.invokeMethod(self, "_add_station", Qt.QueuedConnection, Q_ARG(str, json_data))
+	
+	def safe_update_item_by_mac(self, mac, item, data):
+		QMetaObject.invokeMethod(self, "_update_item_by_mac", Qt.QueuedConnection, Q_ARG(str, mac), Q_ARG(int, item), Q_ARG(str, data))
 	
 	@pyqtSlot(str)
 	def _update_ap_ssid(self, ssid):
@@ -261,17 +281,88 @@ class DeauthDialog(QDialog):
 	@pyqtSlot(int)
 	def _update_ap_beacons(self, beacons):
 		self.beacons_label.setText(f'<b>Beacons:</b> {beacons}')
+		
+	@pyqtSlot(str)
+	def _add_station(self, json_data):
+		rows = []
+		data = json.loads(json_data)
+		
+		value_index = 0
+		for value in data:
+			if value_index == 0:
+				item = QStandardItem(QIcon('icons/wifi-router.png'), value)
+			else:
+				item = QStandardItem(str(value))
+			
+			rows.append(item)
+			value_index += 1
+		
+		self.model.appendRow(rows)
+		row_number = self.model.rowCount() -1
+		self.stations_table.setRowHeight(row_number, 40)
+	
+	@pyqtSlot(str, int, str)
+	def _update_item_by_mac(self, mac, item, data):
+		for row in range(self.model.rowCount()):
+			item_mac = self.model.item(row, 0)
+			if item_mac and item_mac.text().upper() == mac.upper():
+				item = self.model.item(row, item) 
+				if item:
+					item.setText(str(data))
 	
 	def packet_handler(self, pkt):
+		if pkt.haslayer(RadioTap):
+			
+			if pkt.type == 1 and pkt.subtype == 13:
+				if pkt.addr1 in self.stations:
+					self.stations[pkt.addr1]['acks'] += 1
+					self.safe_update_item_by_mac(pkt.addr1, 4, str(self.stations[pkt.addr1]['acks']))
+					
+					#print("Addr1: ", pkt.addr1)
+					#print("Addr2: ", pkt.addr2)
+					#print("Addr3: ", pkt.addr3)
+			
+			if ((pkt.addr2 == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):
+				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
+				station_Rate = pkt.Rate if hasattr(pkt, 'Rate') else '?'
+				station_ChannelFlags = pkt.ChannelFlags if hasattr(pkt, 'ChannelFlags') else '?'
+				vendor = get_vendor_from_mac(pkt.addr1, oui_database)
+				
+				if not pkt.addr1 in self.stations:
+					self.stations[pkt.addr1] = {
+						'mac': pkt.addr1,
+						'vendor': vendor,
+						'signal': signal,
+						'frames': 0,
+						'acks': 0,
+						'rate': station_Rate,
+						'modulation': str(station_ChannelFlags)
+					}
+					
+					stations_list = list(self.stations[pkt.addr1].values())
+					stations_json = json.dumps(stations_list, default=str)
+					self.safe_add_station(stations_json)
+					#self.safe_add_StationsList(ap_mac, stations_json);
+					
+				else:
+					self.stations[pkt.addr1]['signal'] = signal
+					self.stations[pkt.addr1]['rate'] = station_Rate
+					self.stations[pkt.addr1]['modulation'] = str(station_ChannelFlags)
+					self.stations[pkt.addr1]['frames'] += 1
+					
+					self.safe_update_item_by_mac(pkt.addr1, 2, str(signal))
+					self.safe_update_item_by_mac(pkt.addr1, 3, str(self.stations[pkt.addr1]['frames']))
+					self.safe_update_item_by_mac(pkt.addr1, 5, f"{self.stations[pkt.addr1]['rate']} mB/s")
+					self.safe_update_item_by_mac(pkt.addr1, 6, self.stations[pkt.addr1]['modulation'])
+					
 		if not pkt.haslayer(Dot11Beacon):
 			return
 		
 		bssid = pkt.addr3
-		
 		if bssid == self.bssid:
 			self.beacons += 1
-			ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
 			signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
+			ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
 			channel = dot11_utils.get_channel(pkt)
 			#print(signal)
 			self.safe_update_ap_ssid(ssid)
