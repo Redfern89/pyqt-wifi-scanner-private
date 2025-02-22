@@ -6,9 +6,15 @@ from PyQt5.QtWidgets import (
 	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PyQt5.QtCore import Qt, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
 
 import sys
+import threading
+
+from scapy.all import *
+
+import wifi_manager
+import dot11_utils
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
@@ -174,6 +180,8 @@ class DeauthDialog(QDialog):
 		buttons_layout.addStretch()
 		buttons_layout.setContentsMargins(5, 5, 5, 5)
 		
+		self.btn_start_scan.clicked.connect(self.start_monitoring_thread)
+		
 		self.stations_table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
 		self.model.setHorizontalHeaderLabels(['MAC', 'Vendor', 'RSSI', 'Frames', 'Rate', 'Modulation'])
@@ -216,6 +224,45 @@ class DeauthDialog(QDialog):
 		main_layout.addWidget(QTextEdit())
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		self.setLayout(main_layout)
+		
+		self.interface = 'radio0mon'
+		self.bssid = '04:5E:A4:6A:28:47'.lower()
+		self.BSSID = self.bssid.upper()
+		self.channel = 11
+		
+		wifi_manager.switch_iface_channel(self.interface, self.channel)
+		
+		self.beacons = 0
+		
+	def start_monitoring_thread(self):
+		threading.Thread(target=self.start_monitoring).start()
+		
+	def start_monitoring(self):
+		sniff(iface=self.interface, prn=self.packet_handler)
+	
+	def safe_update_ap_rssi(self, rssi):
+		QMetaObject.invokeMethod(self, "_update_ap_rssi", Qt.QueuedConnection, Q_ARG(int, rssi))
+	
+	@pyqtSlot(int)
+	def _update_ap_rssi(self, rssi):
+		self.rssi_pb.setFormat(f"{rssi} dBm")
+		self.rssi_pb.setValue(int(scale_rssi(rssi_value=rssi)))
+	
+	def packet_handler(self, pkt):
+		if not pkt.haslayer(Dot11Beacon):
+			return
+		
+		bssid = pkt.addr3
+		
+		if bssid == self.bssid:
+			self.beacons += 1
+			ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
+			signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
+			channel = dot11_utils.get_channel(pkt)
+			#print(signal)
+			self.safe_update_ap_rssi(signal)
+			self.beacons_label.setText(f'<b>Beacons:</b> {self.beacons}')
+			
 		
 if __name__ == '__main__':
 	app = QApplication(sys.argv)
