@@ -78,16 +78,16 @@ class DeauthDialog(QDialog):
 		
 		self.bssid_label = QLabel("<b>BSSID:</b> 04:5E:CD:1F:66:BE")
 		self.ch_label = QLabel("<b>Channel:</b> 11")
-		self.ssid_label = QLabel("<b>SSID:</b> ya_setko")
-		self.beacons_label = QLabel("<b>Beacons:</b> 761")
+		self.ssid_label = QLabel("<b>SSID:</b> -")
+		self.beacons_label = QLabel("<b>Beacons:</b> -")
 		
 		self.pb_layout = QHBoxLayout()
 		
 		self.rssi_pb = QProgressBar()		
 		self.rssi_pb.setMinimum(0)
 		self.rssi_pb.setMaximum(100)
-		self.rssi_pb.setValue(73)
-		self.rssi_pb.setFormat("-73 dBm")
+		self.rssi_pb.setValue(0)
+		self.rssi_pb.setFormat("? dBm")
 		
 		self.pb_layout.addWidget(QLabel('<b>RSSI: </b>'))
 		self.pb_layout.addWidget(self.rssi_pb)
@@ -240,13 +240,27 @@ class DeauthDialog(QDialog):
 	def start_monitoring(self):
 		sniff(iface=self.interface, prn=self.packet_handler)
 	
+	def safe_update_ap_ssid(self, ssid):
+		QMetaObject.invokeMethod(self, "_update_ap_ssid", Qt.QueuedConnection, Q_ARG(str, ssid))
+	
 	def safe_update_ap_rssi(self, rssi):
 		QMetaObject.invokeMethod(self, "_update_ap_rssi", Qt.QueuedConnection, Q_ARG(int, rssi))
+	
+	def safe_update_ap_beacons(self, beacons):
+		QMetaObject.invokeMethod(self, "_update_ap_beacons", Qt.QueuedConnection, Q_ARG(int, beacons))
+	
+	@pyqtSlot(str)
+	def _update_ap_ssid(self, ssid):
+		self.ssid_label.setText(f'<b>SSID: </b>{ssid}')
 	
 	@pyqtSlot(int)
 	def _update_ap_rssi(self, rssi):
 		self.rssi_pb.setFormat(f"{rssi} dBm")
 		self.rssi_pb.setValue(int(scale_rssi(rssi_value=rssi)))
+	
+	@pyqtSlot(int)
+	def _update_ap_beacons(self, beacons):
+		self.beacons_label.setText(f'<b>Beacons:</b> {beacons}')
 	
 	def packet_handler(self, pkt):
 		if not pkt.haslayer(Dot11Beacon):
@@ -260,8 +274,9 @@ class DeauthDialog(QDialog):
 			signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
 			channel = dot11_utils.get_channel(pkt)
 			#print(signal)
+			self.safe_update_ap_ssid(ssid)
 			self.safe_update_ap_rssi(signal)
-			self.beacons_label.setText(f'<b>Beacons:</b> {self.beacons}')
+			self.safe_update_ap_beacons(self.beacons)
 			
 		
 if __name__ == '__main__':
