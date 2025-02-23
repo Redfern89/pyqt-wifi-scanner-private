@@ -6,11 +6,13 @@ from PyQt5.QtWidgets import (
 	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont
-from PyQt5.QtCore import Qt, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
+from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
 
 import sys
 import csv
 import threading
+import subprocess
+import signal
 import json
 
 from scapy.all import *
@@ -18,30 +20,14 @@ from scapy.all import *
 import wifi_manager
 import dot11_utils
 
-def load_oui_database(filename):
-	oui_dict = {}
-	
-	if not os.path.exists(filename):
-		print(f"Файл {filename} не найден")
-		sys.exit(1)
-	
-	with open(filename, newline='', encoding='utf-8') as csvfile:
-		reader = csv.reader(csvfile)
-		for row in reader:
-			if len(row) >= 3:
-				oui = row[1].upper()
-				vendor = row[2].strip()
-				oui_dict[oui] = vendor
-	return oui_dict
-
-def get_vendor_from_mac(mac_address: str, oui_dict: dict) -> str:
-	mac_prefix = mac_address.upper().replace(":", "").replace("-", "").replace(".", "")[:6]  # Приводим к формату 08EA44
-	return oui_dict.get(mac_prefix, "Unknown")
-
-oui_database = load_oui_database('data/oui.csv')
-
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
+
+class MonoFontDeligate(QStyledItemDelegate):
+	def initStyleOption(self, option, index):
+		super().initStyleOption(option, index)
+		if index.column() == 0:
+			option.font = QFont("Courier New", 9)
 
 class ProgressBarDelegate(QStyledItemDelegate):
 	def __init__(self, parent=None):
@@ -84,6 +70,8 @@ class DeauthDialog(QDialog):
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		
+		self.interrupt_flag = False
+		
 		self.deauth_reasons = {
 			1: "Unspecified reason",
 			2: "Previous authentication no longer valid",
@@ -98,9 +86,20 @@ class DeauthDialog(QDialog):
 		}
 		
 		self.stations = {}
+		self.ouiDB = {}
+		self.ouiCSV_Data = None
 
 		self.setWindowTitle(f"Мониторинг сети ya_setko")
-		self.setGeometry(200, 200, 1200, 560)
+		
+		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
+		wh = xrandr_wxh.split('x')
+		w = 1200
+		h = 600
+		x = round((int(wh[0]) / 2) - (w / 2))
+		y = round((int(wh[1]) / 2) - (h / 2))
+		
+		self.setGeometry(x, y, w, h)
+		self.setWindowIcon(QIcon('icons/satellite-dish.png'))
 		
 		self.bssid_label = QLabel("<b>BSSID:</b> 04:5E:CD:1F:66:BE")
 		self.ch_label = QLabel("<b>Channel:</b> 11")
@@ -183,7 +182,7 @@ class DeauthDialog(QDialog):
 		frame.setFrameShape(QFrame.StyledPanel)
 		
 		frame_out_layout = QHBoxLayout()
-		frame_out_layout.setContentsMargins(0, 0, 0, 0)
+		frame_out_layout.setContentsMargins(5, 5, 5, 5)
 		frame_out_layout.addWidget(frame)
 		
 		buttons_layout = QHBoxLayout()
@@ -210,7 +209,7 @@ class DeauthDialog(QDialog):
 		
 		self.stations_table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
-		self.model.setHorizontalHeaderLabels(['MAC', 'Vendor', 'RSSI', 'Frames', 'ACKs', 'Rate', 'Modulation'])
+		self.model.setHorizontalHeaderLabels(['MAC', 'RSSI', 'Frames', 'ACKs', 'Rate', 'Modulation'])
 
 		self.stations_table.setModel(self.model)
 		self.stations_table.horizontalHeader().setStretchLastSection(True)
@@ -219,18 +218,18 @@ class DeauthDialog(QDialog):
 		self.stations_table.verticalHeader().setVisible(False)
 		self.stations_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
 		
-		self.progress_delegate = ProgressBarDelegate(self.stations_table)
-		self.stations_table.setItemDelegateForColumn(2, self.progress_delegate)
+		#self.progress_delegate = ProgressBarDelegate(self.stations_table)
+		self.stations_table.setItemDelegateForColumn(1, ProgressBarDelegate(self.stations_table))
+		self.stations_table.setItemDelegateForColumn(0, MonoFontDeligate(self.stations_table))
+		
 		self.stations_table.setIconSize(QSize(32, 32))
 		
 		self.stations_table.setColumnWidth(0, 200)
-		self.stations_table.setColumnWidth(1, 300)
-		self.stations_table.setColumnWidth(2, 320)
+		self.stations_table.setColumnWidth(1, 420)
 		self.stations_table.setColumnWidth(3, 55)
 		self.stations_table.setColumnWidth(4, 80)
 		
 		main_layout = QVBoxLayout()
-		main_layout.addWidget(QLabel('<b>Network Info</b>'))
 		main_layout.addLayout(frame_out_layout)
 		main_layout.addLayout(buttons_layout)
 		main_layout.addWidget(self.stations_table)
@@ -240,19 +239,50 @@ class DeauthDialog(QDialog):
 		self.setLayout(main_layout)
 		
 		self.interface = 'radio0mon'
-		self.bssid = 'D2:AF:7D:6E:40:2A'.lower()
+		self.bssid = '04:5E:A4:6A:28:47'.lower()
 		self.BSSID = self.bssid.upper()
-		self.channel = 12
+		self.channel = 11
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		
 		self.beacons = 0
 		
+		signal.signal(signal.SIGINT, self.handle_interrupt)
+		self.load_oui_csv()
+	
+	def load_oui_csv(self):
+		with open('data/oui.csv', newline='', encoding='utf-8') as csvfile:
+			reader = csv.reader(csvfile)
+			for row in reader:
+				if len(row) >= 3:
+					oui = row[1].upper()
+					vendor = row[2].strip()
+					self.ouiDB[oui] = vendor
+	
+	def get_mac_vendor(self, mac):
+		mac_prefix = mac.upper().replace(":", "").replace("-", "").replace(".", "")[:6]
+		return self.ouiDB.get(mac_prefix, "Unknown")
+	
+	def get_mac_vendor_mixed(self, mac):
+		vendor = self.get_mac_vendor(mac)
+		if vendor != 'Unknown':
+			return f"{vendor[:9].replace(' ', '')}_{mac[9:].upper()}"
+		else:
+			return mac.upper()
+	
+	def handle_interrupt(self, signum, frame):
+		self.interrupt_flag = True
+		self.close()
+	
+	def closeEvent(self, event: QEvent):
+		self.interrupt_flag = True
+		event.accept()
+	
 	def start_monitoring_thread(self):
 		threading.Thread(target=self.start_monitoring).start()
 		
 	def start_monitoring(self):
-		sniff(iface=self.interface, prn=self.packet_handler)
+		sniff(iface=self.interface, prn=self.packet_handler, stop_filter=lambda pkt: (self.interrupt_flag))
 	
 	def safe_update_ap_ssid(self, ssid):
 		QMetaObject.invokeMethod(self, "_update_ap_ssid", Qt.QueuedConnection, Q_ARG(str, ssid))
@@ -290,7 +320,7 @@ class DeauthDialog(QDialog):
 		value_index = 0
 		for value in data:
 			if value_index == 0:
-				item = QStandardItem(QIcon('icons/wifi-router.png'), value)
+				item = QStandardItem(QIcon('icons/signal.png'), value)
 			else:
 				item = QStandardItem(str(value))
 			
@@ -312,48 +342,44 @@ class DeauthDialog(QDialog):
 	
 	def packet_handler(self, pkt):
 		if pkt.haslayer(RadioTap):
-			
+			ap_mac = pkt.addr2
+			st_mac = self.get_mac_vendor_mixed(pkt.addr1)
+
 			if pkt.type == 1 and pkt.subtype == 13:
-				if pkt.addr1 in self.stations:
-					self.stations[pkt.addr1]['acks'] += 1
-					self.safe_update_item_by_mac(pkt.addr1, 4, str(self.stations[pkt.addr1]['acks']))
-					
-					#print("Addr1: ", pkt.addr1)
-					#print("Addr2: ", pkt.addr2)
-					#print("Addr3: ", pkt.addr3)
+				if st_mac in self.stations:
+					self.stations[st_mac]['acks'] += 1
+					self.safe_update_item_by_mac(st_mac, 3, str(self.stations[st_mac]['acks']))
 			
-			if ((pkt.addr2 == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):
+			
+			#if ((ap_mac == self.bssid) and ((pkt.type == 1 and pkt.subtype in [8, 9]) or pkt.haslayer(Dot11QoS)) or (pkt.type == 2 and pkt.subtype == 0)):
+			if ((ap_mac == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):#, 11, 12])):
 				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
 				station_Rate = pkt.Rate if hasattr(pkt, 'Rate') else '?'
 				station_ChannelFlags = pkt.ChannelFlags if hasattr(pkt, 'ChannelFlags') else '?'
-				vendor = get_vendor_from_mac(pkt.addr1, oui_database)
-				
-				if not pkt.addr1 in self.stations:
-					self.stations[pkt.addr1] = {
-						'mac': pkt.addr1,
-						'vendor': vendor,
+
+				if not st_mac in self.stations:
+					self.stations[st_mac] = {
+						'mac': st_mac,
 						'signal': signal,
 						'frames': 0,
 						'acks': 0,
-						'rate': station_Rate,
+						'rate': f"{station_Rate} mB/s",
 						'modulation': str(station_ChannelFlags)
 					}
 					
-					stations_list = list(self.stations[pkt.addr1].values())
+					stations_list = list(self.stations[st_mac].values())
 					stations_json = json.dumps(stations_list, default=str)
 					self.safe_add_station(stations_json)
-					#self.safe_add_StationsList(ap_mac, stations_json);
-					
 				else:
-					self.stations[pkt.addr1]['signal'] = signal
-					self.stations[pkt.addr1]['rate'] = station_Rate
-					self.stations[pkt.addr1]['modulation'] = str(station_ChannelFlags)
-					self.stations[pkt.addr1]['frames'] += 1
+					self.stations[st_mac]['signal'] = signal
+					self.stations[st_mac]['rate'] = station_Rate
+					self.stations[st_mac]['modulation'] = str(station_ChannelFlags)
+					self.stations[st_mac]['frames'] += 1
 					
-					self.safe_update_item_by_mac(pkt.addr1, 2, str(signal))
-					self.safe_update_item_by_mac(pkt.addr1, 3, str(self.stations[pkt.addr1]['frames']))
-					self.safe_update_item_by_mac(pkt.addr1, 5, f"{self.stations[pkt.addr1]['rate']} mB/s")
-					self.safe_update_item_by_mac(pkt.addr1, 6, self.stations[pkt.addr1]['modulation'])
+					self.safe_update_item_by_mac(st_mac, 1, str(signal))
+					self.safe_update_item_by_mac(st_mac, 2, str(self.stations[st_mac]['frames']))
+					self.safe_update_item_by_mac(st_mac, 4, f"{self.stations[st_mac]['rate']} mB/s")
+					self.safe_update_item_by_mac(st_mac, 5, self.stations[st_mac]['modulation'])
 					
 		if not pkt.haslayer(Dot11Beacon):
 			return
