@@ -246,7 +246,7 @@ class DeauthDialog(QDialog):
 		self.channel = 11
 		
 		self.bssid_label.setText(self.get_mac_vendor_mixed(self.bssid))
-		self.ch_label.setText(self.channel)
+		self.ch_label.setText(str(self.channel))
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		
