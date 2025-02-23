@@ -71,6 +71,11 @@ class DeauthDialog(QDialog):
 		super().__init__(parent)
 		
 		self.interrupt_flag = False
+		self.key1_flag = False
+		self.key2_flag = False
+		self.key3_flag = False
+		self.key4_flag = False
+		self.st_falgs = {}
 		
 		self.deauth_reasons = {
 			1: "Unspecified reason",
@@ -114,7 +119,7 @@ class DeauthDialog(QDialog):
 		self.rssi_pb.setMinimum(0)
 		self.rssi_pb.setMaximum(100)
 		self.rssi_pb.setValue(0)
-		self.rssi_pb.setFormat("? dBm")
+		self.rssi_pb.setFormat("- dBm")
 		
 		self.pb_layout.addWidget(QLabel('<b>RSSI: </b>'))
 		self.pb_layout.addWidget(self.rssi_pb)
@@ -214,7 +219,7 @@ class DeauthDialog(QDialog):
 		
 		self.stations_table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
-		self.model.setHorizontalHeaderLabels(['MAC', 'RSSI', 'Frames', 'ACKs', 'Rate', 'Modulation'])
+		self.model.setHorizontalHeaderLabels(['MAC', 'RSSI', 'Frames', 'ACKs', 'Rate', 'Modulation', 'Flags'])
 
 		self.stations_table.setModel(self.model)
 		self.stations_table.horizontalHeader().setStretchLastSection(True)
@@ -233,6 +238,7 @@ class DeauthDialog(QDialog):
 		self.stations_table.setColumnWidth(1, 420)
 		self.stations_table.setColumnWidth(3, 55)
 		self.stations_table.setColumnWidth(4, 80)
+		self.stations_table.setColumnWidth(5, 180)
 		
 		main_layout = QVBoxLayout()
 		main_layout.addLayout(frame_out_layout)
@@ -247,10 +253,10 @@ class DeauthDialog(QDialog):
 		self.bssid = '04:5E:A4:6A:28:47'.lower()
 		self.BSSID = self.bssid.upper()
 		self.channel = 11
-		
-		self.interface_label.setText(f'<b>Interface: </b> {self.interface}')
-		self.bssid_label.setText(f'<b>Target: </b> {self.get_mac_vendor_mixed(self.BSSID)}')
-		self.ch_label.setText(f'<b>Channel: </b> {self.channel}')
+
+		self.set_label_item_val_text(self.interface_label, 'Interface', self.interface)
+		self.set_label_item_val_text(self.bssid_label, 'Target', self.get_mac_vendor_mixed(self.bssid))
+		self.set_label_item_val_text(self.ch_label, 'Channel', self.channel)
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		
@@ -272,12 +278,15 @@ class DeauthDialog(QDialog):
 		return self.ouiDB.get(mac_prefix, "Unknown")
 	
 	def get_mac_vendor_mixed(self, mac):
-		vendor = self.get_mac_vendor(mac)
-		if vendor != 'Unknown':
-			return f"{vendor[:9].replace(' ', '')}_{mac[9:].upper()}"
+		if mac:
+			vendor = self.get_mac_vendor(mac)
+			if vendor != 'Unknown':
+				return f"{vendor[:9].replace(' ', '')}_{mac[9:].upper()}"
+			else:
+				return mac.upper()
 		else:
-			return mac.upper()
-	
+			return
+
 	def handle_interrupt(self, signum, frame):
 		self.interrupt_flag = True
 		self.close()
@@ -285,6 +294,9 @@ class DeauthDialog(QDialog):
 	def closeEvent(self, event: QEvent):
 		self.interrupt_flag = True
 		event.accept()
+	
+	def set_label_item_val_text(self, qLabel, item, val):
+		qLabel.setText(f"<b>{item}: </b>{val}")
 	
 	def start_monitoring_thread(self):
 		self.interrupt_flag = False
@@ -296,7 +308,7 @@ class DeauthDialog(QDialog):
 		self.btn_stop_scan.setEnabled(False)
 		self.btn_start_scan.setEnabled(True)
 		self.interrupt_flag = True		
-		
+	
 	def start_monitoring(self):
 		sniff(iface=self.interface, prn=self.packet_handler, stop_filter=lambda pkt: (self.interrupt_flag))
 	
@@ -343,6 +355,7 @@ class DeauthDialog(QDialog):
 			rows.append(item)
 			value_index += 1
 		
+		rows.append(QStandardItem('-'))
 		self.model.appendRow(rows)
 		row_number = self.model.rowCount() -1
 		self.stations_table.setRowHeight(row_number, 40)
@@ -359,58 +372,88 @@ class DeauthDialog(QDialog):
 	def packet_handler(self, pkt):
 		if pkt.haslayer(RadioTap):
 			ap_mac = pkt.addr2
-			st_mac = self.get_mac_vendor_mixed(pkt.addr1)
+			st_mac = pkt.addr1
 
 			if pkt.type == 1 and pkt.subtype == 13:
 				if st_mac in self.stations:
 					self.stations[st_mac]['acks'] += 1
-					self.safe_update_item_by_mac(st_mac, 3, str(self.stations[st_mac]['acks']))
+					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 3, str(self.stations[st_mac]['acks']))
 			
-			
-			#if ((ap_mac == self.bssid) and ((pkt.type == 1 and pkt.subtype in [8, 9]) or pkt.haslayer(Dot11QoS)) or (pkt.type == 2 and pkt.subtype == 0)):
-			if ((ap_mac == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):#, 11, 12])):
+
+			if ((ap_mac == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):
 				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
 				station_Rate = pkt.Rate if hasattr(pkt, 'Rate') else '?'
 				station_ChannelFlags = pkt.ChannelFlags if hasattr(pkt, 'ChannelFlags') else '?'
 
 				if not st_mac in self.stations:
 					self.stations[st_mac] = {
-						'mac': st_mac,
+						'mac': self.get_mac_vendor_mixed(st_mac),
 						'signal': signal,
 						'frames': 0,
 						'acks': 0,
 						'rate': f"{station_Rate} mB/s",
-						'modulation': str(station_ChannelFlags)
+						'modulation': str(station_ChannelFlags),
 					}
 					
 					stations_list = list(self.stations[st_mac].values())
 					stations_json = json.dumps(stations_list, default=str)
 					self.safe_add_station(stations_json)
+					self.stations[st_mac]['flags'] = []
 				else:
 					self.stations[st_mac]['signal'] = signal
 					self.stations[st_mac]['rate'] = station_Rate
 					self.stations[st_mac]['modulation'] = str(station_ChannelFlags)
 					self.stations[st_mac]['frames'] += 1
 					
-					self.safe_update_item_by_mac(st_mac, 1, str(signal))
-					self.safe_update_item_by_mac(st_mac, 2, str(self.stations[st_mac]['frames']))
-					self.safe_update_item_by_mac(st_mac, 4, f"{self.stations[st_mac]['rate']} mB/s")
-					self.safe_update_item_by_mac(st_mac, 5, self.stations[st_mac]['modulation'])
-					
-		if not pkt.haslayer(Dot11Beacon):
-			return
+					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 1, str(signal))
+					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 2, str(self.stations[st_mac]['frames']))
+					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 4, f"{self.stations[st_mac]['rate']} mB/s")
+					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 5, self.stations[st_mac]['modulation'])
 		
-		bssid = pkt.addr3
-		if bssid == self.bssid:
-			self.beacons += 1
-			signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
-			ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
-			channel = dot11_utils.get_channel(pkt)
-			#print(signal)
-			self.safe_update_ap_ssid(ssid)
-			self.safe_update_ap_rssi(signal)
-			self.safe_update_ap_beacons(self.beacons)
+		if pkt.haslayer(Dot11):
+			if pkt.type == 0 and pkt.subtype == 12:
+				#d_st_mac = pkt.addr2
+				d_st_mac = pkt.addr1 if pkt.addr1 in self.stations else (pkt.addr2 if pkt.addr2 in self.stations else None)
+
+				if d_st_mac in self.stations:
+					if 'D' not in self.stations[d_st_mac]['flags']:
+						self.stations[d_st_mac]['flags'].append('D')
+						
+						self.safe_update_item_by_mac(self.get_mac_vendor_mixed(d_st_mac), 6, ' '.join(self.stations[d_st_mac]['flags']))
+							
+		if pkt.haslayer(EAPOL) and pkt.addr3 == self.bssid:
+			raw_data = bytes(pkt[EAPOL])
+			key_info = int.from_bytes(raw_data[5:7], 'big')
+			eapol_st = pkt.addr1 if pkt.addr1 in self.stations else (pkt.addr2 if pkt.addr2 in self.stations else None)
+
+			if eapol_st:
+				if eapol_st in self.stations:
+					if key_info == 0x008a:
+						if 'M1' not in self.stations[eapol_st]['flags']:
+							self.stations[eapol_st]['flags'].append('M1')
+					elif key_info == 0x010a:
+						if 'M2' not in self.stations[eapol_st]['flags']:
+							self.stations[eapol_st]['flags'].append('M2')
+					elif key_info == 0x13ca:
+						if 'M3' not in self.stations[eapol_st]['flags']:
+							self.stations[eapol_st]['flags'].append('M3')
+					elif key_info == 0x030a:
+						if 'M4' not in self.stations[eapol_st]['flags']:
+							self.stations[eapol_st]['flags'].append('M4')
+								
+					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(eapol_st), 6, ' '.join(self.stations[eapol_st]['flags']))
 			
+		if pkt.haslayer(Dot11Beacon):
+			bssid = pkt.addr3
+			if bssid == self.bssid:
+				self.beacons += 1
+				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
+				ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
+				channel = dot11_utils.get_channel(pkt)
+				#print(signal)
+				self.safe_update_ap_ssid(ssid)
+				self.safe_update_ap_rssi(signal)
+				self.safe_update_ap_beacons(self.beacons)
 		
 if __name__ == '__main__':
 	app = QApplication(sys.argv)
