@@ -88,7 +88,8 @@ class DeauthDialog(QDialog):
 		self.stations = {}
 		self.ouiDB = {}
 		self.ouiCSV_Data = None
-
+		self.load_oui_csv()
+		
 		self.setWindowTitle(f"Мониторинг сети ya_setko")
 		
 		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
@@ -245,15 +246,14 @@ class DeauthDialog(QDialog):
 		self.BSSID = self.bssid.upper()
 		self.channel = 11
 		
-		self.bssid_label.setText(self.get_mac_vendor_mixed(self.bssid))
-		self.ch_label.setText(str(self.channel))
+		self.bssid_label.setText(f'<b>Target: </b> {self.get_mac_vendor_mixed(self.BSSID)}')
+		self.ch_label.setText(f'<b>Channel: </b> {self.channel}')
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		
 		self.beacons = 0
 		
 		signal.signal(signal.SIGINT, self.handle_interrupt)
-		self.load_oui_csv()
 	
 	def load_oui_csv(self):
 		with open('data/oui.csv', newline='', encoding='utf-8') as csvfile:
