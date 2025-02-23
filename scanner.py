@@ -852,7 +852,7 @@ class MainWindow(QMainWindow):
 			
 			self.safe_update_item_by_bssid(bssid, 2, str(channel))
 			self.safe_update_item_by_bssid(bssid, 10, str(signal))
-			self.safe_update_item_by_bssid(bssid, 11, str(beacons))			
+			self.safe_update_item_by_bssid(bssid, 11, str(beacons))		
 
 if __name__ == '__main__':
 	if checker.check_all_need():

