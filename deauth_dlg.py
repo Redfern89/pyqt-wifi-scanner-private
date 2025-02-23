@@ -71,11 +71,14 @@ class DeauthDialog(QDialog):
 		super().__init__(parent)
 		
 		self.interrupt_flag = False
+		self.first_beacon_flag = False
+		
 		self.key1_flag = False
 		self.key2_flag = False
 		self.key3_flag = False
 		self.key4_flag = False
 		self.st_falgs = {}
+		self.packets = []
 		
 		self.deauth_reasons = {
 			1: "Unspecified reason",
@@ -211,6 +214,7 @@ class DeauthDialog(QDialog):
 		buttons_layout.addWidget(self.btn_start_scan)
 		buttons_layout.addWidget(self.btn_stop_scan)
 		buttons_layout.addWidget(self.btn_deauth)
+		buttons_layout.addWidget(QLabel('<b>Handshake: </b> -'))
 		buttons_layout.addStretch()
 		buttons_layout.setContentsMargins(5, 5, 5, 5)
 		
@@ -240,17 +244,21 @@ class DeauthDialog(QDialog):
 		self.stations_table.setColumnWidth(4, 80)
 		self.stations_table.setColumnWidth(5, 180)
 		
+		self.log_textarea = QTextEdit()
+		self.log_textarea.setFont(QFont("Courier New", 11))
+		self.log_textarea.setReadOnly(True)
+		
 		main_layout = QVBoxLayout()
 		main_layout.addLayout(frame_out_layout)
 		main_layout.addLayout(buttons_layout)
 		main_layout.addWidget(self.stations_table)
 		main_layout.addWidget(QLabel('<b>Лог</b>'))
-		main_layout.addWidget(QTextEdit())
+		main_layout.addWidget(self.log_textarea)
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		self.setLayout(main_layout)
 		
 		self.interface = 'radio0mon'
-		self.bssid = '04:5E:A4:6A:28:47'.lower()
+		self.bssid = '04:5e:a4:6a:28:47'.lower()
 		self.BSSID = self.bssid.upper()
 		self.channel = 11
 
@@ -259,10 +267,17 @@ class DeauthDialog(QDialog):
 		self.set_label_item_val_text(self.ch_label, 'Channel', self.channel)
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
-		
 		self.beacons = 0
-		
 		signal.signal(signal.SIGINT, self.handle_interrupt)
+		self.log_add(f"[+] Switching {self.interface} to channel {self.channel}")
+	
+	def safe_log_add(self, log):
+		QMetaObject.invokeMethod(self, "log_add", Qt.QueuedConnection, Q_ARG(str, log))
+	
+	@pyqtSlot(str)
+	def log_add(self, log):
+		self.log_textarea.append(log)
+		self.log_textarea.moveCursor(self.log_textarea.textCursor().End)
 	
 	def load_oui_csv(self):
 		with open('data/oui.csv', newline='', encoding='utf-8') as csvfile:
@@ -293,6 +308,7 @@ class DeauthDialog(QDialog):
 	
 	def closeEvent(self, event: QEvent):
 		self.interrupt_flag = True
+		self.stations = {}
 		event.accept()
 	
 	def set_label_item_val_text(self, qLabel, item, val):
@@ -303,6 +319,7 @@ class DeauthDialog(QDialog):
 		self.btn_stop_scan.setEnabled(True)
 		self.btn_start_scan.setEnabled(False)
 		threading.Thread(target=self.start_monitoring).start()
+		self.log_add(f"[+] Waiting beacon frame from {self.get_mac_vendor_mixed(self.bssid)}")
 		
 	def stop_monitoring(self):
 		self.btn_stop_scan.setEnabled(False)
@@ -411,17 +428,18 @@ class DeauthDialog(QDialog):
 					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 5, self.stations[st_mac]['modulation'])
 		
 		if pkt.haslayer(Dot11):
-			if pkt.type == 0 and pkt.subtype == 12:
-				#d_st_mac = pkt.addr2
+			if pkt.type == 0 and pkt.subtype in [2, 12]:
 				d_st_mac = pkt.addr1 if pkt.addr1 in self.stations else (pkt.addr2 if pkt.addr2 in self.stations else None)
 
 				if d_st_mac in self.stations:
-					if 'D' not in self.stations[d_st_mac]['flags']:
+					if 'D' not in self.stations[d_st_mac]['flags'] and pkt.subtype == 12:
 						self.stations[d_st_mac]['flags'].append('D')
-						
+						self.safe_update_item_by_mac(self.get_mac_vendor_mixed(d_st_mac), 6, ' '.join(self.stations[d_st_mac]['flags']))
+					if 'R' not in self.stations[d_st_mac]['flags'] and pkt.subtype == 2:
+						self.stations[d_st_mac]['flags'].append('R')
 						self.safe_update_item_by_mac(self.get_mac_vendor_mixed(d_st_mac), 6, ' '.join(self.stations[d_st_mac]['flags']))
 							
-		if pkt.haslayer(EAPOL) and pkt.addr3 == self.bssid:
+		if pkt.haslayer(EAPOL) and pkt[EAPOL].type == 3 and pkt.addr3 == self.bssid:
 			raw_data = bytes(pkt[EAPOL])
 			key_info = int.from_bytes(raw_data[5:7], 'big')
 			eapol_st = pkt.addr1 if pkt.addr1 in self.stations else (pkt.addr2 if pkt.addr2 in self.stations else None)
@@ -429,15 +447,23 @@ class DeauthDialog(QDialog):
 			if eapol_st:
 				if eapol_st in self.stations:
 					if key_info == 0x008a:
+						self.packets.append(pkt)
+						self.safe_log_add(f"[+] Received M1 Message from \"{self.get_mac_vendor_mixed(self.BSSID)}\"")
 						if 'M1' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M1')
 					elif key_info == 0x010a:
+						self.packets.append(pkt)
+						self.safe_log_add(f"[+] Received M2 Message from \"{self.get_mac_vendor_mixed(eapol_st)}\"")
 						if 'M2' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M2')
 					elif key_info == 0x13ca:
+						self.packets.append(pkt)
+						self.safe_log_add(f"[+] Received M3 Message from \"{self.get_mac_vendor_mixed(self.BSSID)}\"")
 						if 'M3' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M3')
 					elif key_info == 0x030a:
+						self.packets.append(pkt)
+						self.safe_log_add(f"[+] Received M4 Message from \"{self.get_mac_vendor_mixed(eapol_st)}\"")
 						if 'M4' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M4')
 								
@@ -450,7 +476,12 @@ class DeauthDialog(QDialog):
 				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
 				ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
 				channel = dot11_utils.get_channel(pkt)
-				#print(signal)
+				
+				if not self.first_beacon_flag:
+					self.first_beacon_flag = True
+					self.packets.append(pkt)
+					self.safe_log_add(f"[+] Done, ssid=\"{ssid}\"")
+				
 				self.safe_update_ap_ssid(ssid)
 				self.safe_update_ap_rssi(signal)
 				self.safe_update_ap_beacons(self.beacons)

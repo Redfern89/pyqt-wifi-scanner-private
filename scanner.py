@@ -38,28 +38,6 @@ broadcast = 'ff:ff:ff:ff:ff:ff'
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
 
-def load_oui_database(filename=params['oui_path']):
-	oui_dict = {}
-	
-	if not os.path.exists(filename):
-		print(f"Файл {filename} не найден")
-		sys.exit(1)
-	
-	with open(filename, newline='', encoding='utf-8') as csvfile:
-		reader = csv.reader(csvfile)
-		for row in reader:
-			if len(row) >= 3:
-				oui = row[1].upper()
-				vendor = row[2].strip()
-				oui_dict[oui] = vendor
-	return oui_dict
-
-def get_vendor_from_mac(mac_address: str, oui_dict: dict) -> str:
-	mac_prefix = mac_address.upper().replace(":", "").replace("-", "").replace(".", "")[:6]  # Приводим к формату 08EA44
-	return oui_dict.get(mac_prefix, "Unknown")
-
-oui_database = load_oui_database(params['oui_path'])
-
 class ProgressBarDelegate(QStyledItemDelegate):
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -154,7 +132,6 @@ class MyTableView(QTableView):
 class ChoseWiFiAdapderDialog(QDialog):
 	def __init__(self, parent=None):
 		super().__init__(parent)
-
 		self.setWindowTitle("Выбор Wifi адаптера")
 		self.setWindowIcon(QIcon('icons/ethernet.png'))
 		self.setGeometry(200, 200, 1120, 520)
@@ -387,6 +364,11 @@ class MainWindow(QMainWindow):
 		self.supported_channels = []
 		self.interface = None
 		
+		
+		self.ouiDB = {}
+		self.ouiCSV_Data = None
+		self.load_oui_csv()
+		
 		self.statusbar = QStatusBar()
 		self.setStatusBar(self.statusbar)
 		
@@ -498,6 +480,29 @@ class MainWindow(QMainWindow):
 
 		self.setCentralWidget(central_widget)
 		central_widget.setLayout(main_layout)
+	
+	def load_oui_csv(self):
+		with open('data/oui.csv', newline='', encoding='utf-8') as csvfile:
+			reader = csv.reader(csvfile)
+			for row in reader:
+				if len(row) >= 3:
+					oui = row[1].upper()
+					vendor = row[2].strip()
+					self.ouiDB[oui] = vendor
+	
+	def get_mac_vendor(self, mac):
+		mac_prefix = mac.upper().replace(":", "").replace("-", "").replace(".", "")[:6]
+		return self.ouiDB.get(mac_prefix, "Unknown")
+	
+	def get_mac_vendor_mixed(self, mac):
+		if mac:
+			vendor = self.get_mac_vendor(mac)
+			if vendor != 'Unknown':
+				return f"{vendor[:9].replace(' ', '')}_{mac[9:].upper()}"
+			else:
+				return mac.upper()
+		else:
+			return
 	
 	def startWorkTimer(self):
 		self.workTimeLabel.setText('0d 00:00:00')
@@ -753,7 +758,7 @@ class MainWindow(QMainWindow):
 				station_ChannelFlags = pkt.ChannelFlags if hasattr(pkt, 'ChannelFlags') else '?'
 				station_Rate = pkt.Rate if hasattr(pkt, 'Rate') else '?'
 				station_Rate = '?' if station_Rate is None else station_Rate
-				station_Vendor = get_vendor_from_mac(station_MAC, oui_database)
+				station_Vendor = self.get_mac_vendor(station_MAC) # get_vendor_from_mac(station_MAC, oui_database)
 				
 				if ap_mac in self.networks:
 					stations_networks = self.networks[ap_mac]['stations']
@@ -808,7 +813,7 @@ class MainWindow(QMainWindow):
 			ciphers = ','.join(enc_info['ciphers'])
 			akms = ','.join(enc_info['akms'])
 			
-			vendor = get_vendor_from_mac(bssid, oui_database)
+			vendor = self.get_mac_vendor(bssid) #get_vendor_from_mac(bssid, oui_database)
 			chip = dot11_utils.get_chip_vendor(bytes(pkt))
 			
 			if wps_ie:
