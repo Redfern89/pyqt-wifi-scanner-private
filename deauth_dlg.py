@@ -101,8 +101,8 @@ class DeauthDialog(QDialog):
 		self.setGeometry(x, y, w, h)
 		self.setWindowIcon(QIcon('icons/satellite-dish.png'))
 		
-		self.bssid_label = QLabel("<b>BSSID:</b> 04:5E:CD:1F:66:BE")
-		self.ch_label = QLabel("<b>Channel:</b> 11")
+		self.bssid_label = QLabel("<b>BSSID:</b> -")
+		self.ch_label = QLabel("<b>Channel:</b> -")
 		self.ssid_label = QLabel("<b>SSID:</b> -")
 		self.beacons_label = QLabel("<b>Beacons:</b> -")
 		
@@ -244,6 +244,9 @@ class DeauthDialog(QDialog):
 		self.bssid = '04:5E:A4:6A:28:47'.lower()
 		self.BSSID = self.bssid.upper()
 		self.channel = 11
+		
+		self.bssid_label.setText(self.get_mac_vendor_mixed(self.bssid))
+		self.ch_label.setText(self.channel)
 		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		
