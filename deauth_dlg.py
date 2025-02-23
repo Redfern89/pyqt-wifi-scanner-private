@@ -193,10 +193,11 @@ class DeauthDialog(QDialog):
 		self.btn_start_scan.setIcon(QIcon('icons/refresh.png'))
 		self.btn_start_scan.setIconSize(QSize(24, 24))
 
-		self.btn_stop_scan.setIcon(QIcon('icons/stop.png'))
+		self.btn_stop_scan.setIcon(QIcon('icons/cancelled.png'))
 		self.btn_stop_scan.setIconSize(QSize(24, 24))
+		self.btn_stop_scan.setEnabled(False)
 		
-		self.btn_deauth.setIcon(QIcon('icons/scan.png'))
+		self.btn_deauth.setIcon(QIcon('icons/unlocked.png'))
 		self.btn_deauth.setIconSize(QSize(24, 24))		
 		
 		buttons_layout.addWidget(self.btn_start_scan)
@@ -206,6 +207,7 @@ class DeauthDialog(QDialog):
 		buttons_layout.setContentsMargins(5, 5, 5, 5)
 		
 		self.btn_start_scan.clicked.connect(self.start_monitoring_thread)
+		self.btn_stop_scan.clicked.connect(self.stop_monitoring)
 		
 		self.stations_table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
@@ -279,7 +281,15 @@ class DeauthDialog(QDialog):
 		event.accept()
 	
 	def start_monitoring_thread(self):
+		self.interrupt_flag = False
+		self.btn_stop_scan.setEnabled(True)
+		self.btn_start_scan.setEnabled(False)
 		threading.Thread(target=self.start_monitoring).start()
+		
+	def stop_monitoring(self):
+		self.btn_stop_scan.setEnabled(False)
+		self.btn_start_scan.setEnabled(True)
+		self.interrupt_flag = True		
 		
 	def start_monitoring(self):
 		sniff(iface=self.interface, prn=self.packet_handler, stop_filter=lambda pkt: (self.interrupt_flag))
