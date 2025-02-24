@@ -26,8 +26,9 @@ from functools import partial
 import checker
 import wifi_manager
 import dot11_utils
+import deauth_dlg
 
-params = {
+params1 = {
 	'oui_path': 'data/oui.csv',
 	'row_height': 40,
 	'stations_row_height': 150
@@ -134,8 +135,15 @@ class ChoseWiFiAdapderDialog(QDialog):
 		super().__init__(parent)
 		self.setWindowTitle("Выбор Wifi адаптера")
 		self.setWindowIcon(QIcon('icons/ethernet.png'))
-		self.setGeometry(200, 200, 1120, 520)
-
+		
+		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
+		wh = xrandr_wxh.split('x')
+		w = 1120
+		h = 520
+		x = round((int(wh[0]) / 2) - (w / 2))
+		y = round((int(wh[1]) / 2) - (h / 2))
+		self.setGeometry(x, y, w, h)
+		
 		self.table = QTableView(self)
 		self.model = QStandardItemModel(0, 5, self)
 		self.model.setHorizontalHeaderLabels(['PHY', 'Interface', 'MAC', 'Driver', 'Chipset', 'State', 'Mode'])
@@ -414,7 +422,15 @@ class MainWindow(QMainWindow):
 		
 		self.setWindowTitle("PyQt WiFi scanner")
 		self.setWindowIcon(QIcon('icons/satellite-dish.png'))
-		self.setGeometry(100, 100, 1500, 530)
+		
+		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
+		wh = xrandr_wxh.split('x')
+		w = 1500
+		h = 530
+		x = round((int(wh[0]) / 2) - (w / 2))
+		y = round((int(wh[1]) / 2) - (h / 2))
+		
+		self.setGeometry(x, y, w, h)
 		
 		self.btn_wifi = QPushButton('Выбор адаптера')
 		self.btn_wifi.setIcon(QIcon('icons/ethernet.png'))
@@ -425,12 +441,18 @@ class MainWindow(QMainWindow):
 		self.btn_stop = QPushButton('Остановить')
 		self.btn_stop.setIcon(QIcon('icons/cancelled.png'))
 		self.btn_stop.setIconSize(QSize(24, 24))
+		self.btn_targ = QPushButton('Выбор цели')
+		self.btn_targ.setIcon(QIcon('icons/target.png'))
+		self.btn_targ.setIconSize(QSize(24, 24))
 		
 		self.btn_wifi.clicked.connect(self.chose_wifi_adapter_dialog)
 		self.btn_scan.clicked.connect(self.scan_networks)
 		self.btn_stop.clicked.connect(self.stop_scan)
+		self.btn_targ.clicked.connect(self.target_select)
+		
 		self.btn_scan.setEnabled(False)
 		self.btn_stop.setEnabled(False)
+		#self.btn_targ.setEnabled(False)
 		
 		self.wps_checkbox = QCheckBox('Только WPS-сети')
 		self.sta_checkbox = QCheckBox('Показывать подключенные станции')
@@ -440,6 +462,7 @@ class MainWindow(QMainWindow):
 		top_layout.addWidget(self.btn_wifi)
 		top_layout.addWidget(self.btn_scan)
 		top_layout.addWidget(self.btn_stop)
+		top_layout.addWidget(self.btn_targ)
 		top_layout.addWidget(self.wps_checkbox)
 		top_layout.addWidget(self.sta_checkbox)
 		top_layout.setContentsMargins(5, 5, 5, 0)
@@ -480,6 +503,20 @@ class MainWindow(QMainWindow):
 
 		self.setCentralWidget(central_widget)
 		central_widget.setLayout(main_layout)
+	
+	def target_select(self):
+		selected_indexes = self.table.selectionModel().selectedRows()
+		if selected_indexes:
+			if self.interface:
+				row = selected_indexes[0].row()
+				model = self.table.model()
+				bssid = model.data(model.index(row, 1))
+				channel = model.data(model.index(row, 2))
+				if bssid:
+					targetWindow = deauth_dlg.DeauthDialog(self.interface, bssid, channel, self)
+					targetWindow.exec_()
+			else:
+				QMessageBox.critical(self, "Error", "Интерфейс не выбран!")
 	
 	def load_oui_csv(self):
 		with open('data/oui.csv', newline='', encoding='utf-8') as csvfile:
@@ -669,7 +706,7 @@ class MainWindow(QMainWindow):
 		
 		self.model.appendRow(rows)
 		row_number = self.model.rowCount() -1
-		self.table.setRowHeight(row_number, int(params['row_height']))
+		self.table.setRowHeight(row_number, 40)
 		
 		self.previous_progress_values[(row_number, 9)] = data['signal']
 	

