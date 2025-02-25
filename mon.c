@@ -6,12 +6,6 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 
-// Структура для хранения информации о точках доступа
-typedef struct {
-    char ssid[32];
-    char bssid[18];
-} APInfo;
-
 typedef struct {
 	char source[18];
 	char destination[18];
@@ -22,12 +16,59 @@ typedef struct {
 	uint8_t sequence;
 } Beacon;
 
-// Функция обработки захваченных пакетов
+
+uint16_t read_le16(const uint8_t *ptr) {
+	return ptr[0] | (ptr[1] << 8);
+}
+
+typedef struct {
+	uint8_t it_version;
+	uint8_t it_pad;
+	uint16_t it_len;
+	uint32_t it_present;
+}__attribute__((packed)) ieee80211_radiotap_header;
+
+typedef struct {
+	uint8_t TSFT;
+	uint8_t Flags;
+	uint8_t Rate;
+	uint8_t Channel;
+	uint8_t FHSS;
+	uint8_t dbm_Antenna_Signal;
+	uint8_t dbm_Antenna_Noise;
+	uint8_t Lock_Quality;
+	uint8_t TX_Attenuation;
+	uint8_t db_TX_Attenuation;
+	uint8_t dbm_TX_Power;
+	uint8_t db_Antenna_Signal;
+	uint8_t db_Antenna_Noise;
+	uint8_t RX_Flags;
+	uint8_t TX_Flags;
+	uint8_t Data_retries;
+	uint8_t MCS;
+	uint8_t A_MPDU_Status;
+	uint8_t VHT_Info;
+	uint8_t Frame_timestamp;
+	uint8_t HE_Info;
+	uint8_t HE_MU_Info;
+	uint8_t Null_Length_PSDU;
+	uint8_t L_SIG;
+	uint8_t TLVs;
+	uint8_t RadioTap_NS_Next;
+	uint8_t Vendor_NS_Next;
+	uint8_t Ext;
+}__attribute__((packed)) ieee80211_radiotap_present_flags;
+
 void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
+	ieee80211_radiotap_header *rt = (ieee80211_radiotap_header *)packet;
+	ieee80211_radiotap_present_flags *rt_present = (ieee80211_radiotap_present_flags *)rt -> it_present;
 	
+}
+
+// Функция обработки захваченных пакетов
+void packet_handler_(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
 	// RadioTap Header
-	if (packet[0] == 0x00 && packet[1] == 0x00 && packet[2] == 0x12) {
-		//printf("Captured packet of length %d\n", pkthdr->len);
+	if (packet[0] == 0x00 && packet[1] == 0x00) {
 		int RadioTap_Len = packet[2];
 		int BeaconFrame_Offset = RadioTap_Len;
 		
@@ -51,60 +92,29 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
 						packet[BeaconFrame_Offset +20], packet[BeaconFrame_Offset +21]
 					);
 			
-			//if (strcmp(beacon -> transmitter, "04:5e:a4:6a:28:47") == 0) {
-				printf("\n\nDestination: %s \n", beacon -> destination);
-				printf("Transmitter: %s \n", beacon -> transmitter);
-				printf("Source: %s \n", beacon -> source);
-				printf("OK\n");
+
+			printf("\n\nDestination: %s \n", beacon -> destination);
+			printf("Transmitter: %s \n", beacon -> transmitter);
+			printf("Source: %s \n", beacon -> source);
+			printf("OK\n");
+
+			uint8_t tagged_params_offset = BeaconFrame_Offset + 36;
+			if (packet[tagged_params_offset] == 0x00) {
+				uint8_t ssid_length = packet[tagged_params_offset +1];
+				char ssid[32];
+				memcpy(ssid, &packet[tagged_params_offset+2], ssid_length);
+				ssid[ssid_length] = '\0';
+				printf("SSID: %s\n", ssid);
+			}
 				
-				uint8_t tagged_params_offset = BeaconFrame_Offset + 36;
-				if (packet[tagged_params_offset] == 0x00) {
-					uint8_t ssid_length = packet[tagged_params_offset +1];
-					char ssid[32];
-					memcpy(ssid, &packet[tagged_params_offset+2], ssid_length);
-					ssid[ssid_length] = '\0';
-					printf("SSID: %s\n", ssid);
-				}
-				
-				printf("Dump: \n");
-				for (int i = BeaconFrame_Offset +36; i < pkthdr -> len; i++) {
-					printf("%02x ", packet[i]);
-					if ((i+1) % 16 == 0) printf("\n");
-				}
-				
-			//}
-			
-			printf("\n");
+			printf("Dump: \n");
+			for (int i = BeaconFrame_Offset +36; i < pkthdr -> len; i++) {
+				printf("%02x ", packet[i]);
+				if ((i+1) % 16 == 0) printf("\n");
+			}
 		}
-		
-		//printf("\n\n");
 	}
-	
-   /* // Печатаем каждый захваченный пакет в HEX, чтобы понять, что вообще приходит
-    printf("Captured packet of length %d\n", pkthdr->len);
-    for (int i = 0; i < pkthdr->len; i++) {
-        printf("%02x ", packet[i]);
-        if ((i+1) % 16 == 0) printf("\n");
-    }
-    printf("\n");
 
-    // Стандартная обработка, если это 802.11 Beacon фрейм
-    if (packet[0] == 0x80) {  // Тип фрейма Beacon - это 0x80
-        APInfo *ap = (APInfo *)user_data;
-        //printf("dd");
-
-        // Копируем BSSID из источника
-        snprintf(ap->bssid, sizeof(ap->bssid), "%02x:%02x:%02x:%02x:%02x:%02x",
-            packet[10], packet[11], packet[12], packet[13], packet[14], packet[15]);
-
-        // Извлекаем SSID (после заголовков, на 37-ом байте и дальше)
-        int ssid_length = packet[37];
-        memcpy(ap->ssid, &packet[38], ssid_length);
-        ap->ssid[ssid_length] = '\0'; // Завершаем строку
-
-        printf("Found AP: BSSID: %s, SSID: %s\n", ap->bssid, ap->ssid);
-    }
-    * */
 }
 
 int main() {
@@ -113,29 +123,17 @@ int main() {
     char *dev = "wlan0mon"; // Интерфейс для прослушивания
 
     // Открываем интерфейс wlan0mon
-    handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
+    handle = pcap_open_live(dev, BUFSIZ, 1000, 1, errbuf);
     if (handle == NULL) {
         printf("Error opening device %s: %s\n", dev, errbuf);
         return 1;
     }
 
-    // Добавим фильтрацию, чтобы ловить только 802.11 пакеты
-    struct bpf_program fp;
-    if (pcap_compile(handle, &fp, "wlan type mgt", 0, PCAP_NETMASK_UNKNOWN) == -1) {
-        printf("Error compiling filter: %s\n", pcap_geterr(handle));
-        return 1;
-    }
-
-    if (pcap_setfilter(handle, &fp) == -1) {
-        printf("Error setting filter: %s\n", pcap_geterr(handle));
-        return 1;
-    }
-
-    APInfo ap_info;
-    memset(&ap_info, 0, sizeof(ap_info));
+    Beacon beacon;
+    memset(&beacon, 0, sizeof(beacon));
 
     // Захватываем пакеты и обрабатываем их
-    if (pcap_loop(handle, 0, packet_handler, (u_char *)&ap_info) < 0) {
+    if (pcap_loop(handle, 0, packet_handler, (u_char *)&beacon) < 0) {
         printf("Error capturing packets: %s\n", pcap_geterr(handle));
         return 1;
     }
