@@ -675,9 +675,12 @@ class MainWindow(QMainWindow):
 	
 	def channel_hopper(self):
 		while not self.stop_hopping.is_set():  
-			ch = random.choice(self.supported_channels)
 			if self.stop_hopping.is_set():
 				break
+			ch = random.choice(self.supported_channels)
+			wifi_manager.switch_iface_channel(self.interface, ch)
+			
+			#for ch in self.supported_channels:
 			wifi_manager.switch_iface_channel(self.interface, ch)
 			self.safe_chlabel_set_ch(str(ch))
 			time.sleep(0.2)

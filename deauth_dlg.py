@@ -127,6 +127,7 @@ class DeauthDialog(QDialog):
 		self.ch_label = QLabel("<b>Channel:</b> -")
 		self.ssid_label = QLabel("<b>SSID:</b> -")
 		self.beacons_label = QLabel("<b>Beacons:</b> -")
+		self.packetlen_label = QLabel("<b>Packets:</b> -")
 		
 		self.pb_layout = QHBoxLayout()
 		
@@ -146,6 +147,7 @@ class DeauthDialog(QDialog):
 		status_layout.addWidget(self.ch_label)
 		status_layout.addWidget(self.bssid_label)
 		status_layout.addWidget(self.beacons_label)
+		status_layout.addWidget(self.packetlen_label)
 		status_layout.addLayout(self.pb_layout)
 		status_layout.setContentsMargins(5, 5, 5, 5)
 		
@@ -287,11 +289,19 @@ class DeauthDialog(QDialog):
 		self.set_label_item_val_text(self.bssid_label, 'Target', self.get_mac_vendor_mixed(self.bssid))
 		self.set_label_item_val_text(self.ch_label, 'Channel', self.channel)
 		
+		self.refresh_timer = QTimer()
+		self.refresh_timer.setInterval(1)
+		self.refresh_timer.timeout.connect(self.refresh_oher_data)
+		self.refresh_timer.start()
+		
 		wifi_manager.switch_iface_channel(self.interface, self.channel)
 		self.beacons = 0
 		signal.signal(signal.SIGINT, self.handle_interrupt)
 		self.log_add(f"[+] Switching {self.interface} to channel {self.channel}")
-			
+	
+	def refresh_oher_data(self):
+		self.set_label_item_val_text(self.packetlen_label, 'Packets', len(self.packets))
+	
 	def start_deauth(self):
 		selected_indexes = self.stations_table.selectionModel().selectedRows()
 		if selected_indexes:
