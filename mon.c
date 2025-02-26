@@ -229,65 +229,18 @@ static inline uint32_t align_offset(uint32_t offset, uint32_t align) {
 	return (offset + (align - 1)) & ~(align - 1);
 }
 
-void packet_handler__(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
-	ieee80211_radiotap_header *rt = (ieee80211_radiotap_header *)packet;
-	uint32_t present_offset = 8; // Skip radiotap header
-		
-	//printf("Initial offset val = %d\n", present_offset);
-	for (int i = 0; i < 32; i++) {
-		if (rt -> it_present & (1UL << i)) {
-			uint32_t present_size = 0;
-			uint32_t present = 0x0000 | (1UL << i);
-			present_size = ieee80211_radiotap_presents_size[present];
-			present_offset = align_offset(present_offset, present_size);
-			
-			//printf("Present byte: %d, present size: %d, present offset: %d\n", i, present_size, present_offset);
-			
-			switch (present) {
-				case IEEE80211_RADIOTAP_Channel:
-					uint32_t channel_info = *(uint32_t *)(packet + present_offset - sizeof(uint32_t));
-					uint8_t *channel_info_ptr = (uint8_t *)&channel_info;
-					printf("offset: %d\n", present_offset);
-					printf("channel_info: ");
-					for (int j = 0; j < 4; j++) {
-						printf("%02x ", channel_info_ptr[j]); 
-					}
-					printf("\n");
-					
-					break;
-			}
-			
-			present_offset += present_size;
-		}
-	}
-	
-	printf("RadioTap Dump:\n");
-	for (int j = 0; j < rt -> it_len; j++) {
-		printf("%02x ", packet[j]);
-		if ((j + 1) % 8 == 0) printf("   ");
-		if ((j + 1) % 16 == 0) printf("\n");
-	}
-	
-	exit(1);
-}
-
 void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
 	ieee80211_radiotap_header *rt = (ieee80211_radiotap_header *)packet;
 	uint32_t present_offset = 8;
 	
 	printf("RadioTap presents: 0x%02x\n", rt -> it_present);
 	
-	//printf("Initial offset val = %d\n", present_offset);
-	
 	for (int i = 0; i < 32; i++) {
 		uint32_t present_size = 0;
 		if (rt -> it_present & (1UL << i)) {			
 			uint32_t present = 0x0000 | (1UL << i);
 			present_size = ieee80211_radiotap_presents_size[present];
-			present_offset = align_offset(present_offset, present_size);
-			
-			//printf("Present byte: %d, present size: %d, present offset: %d\n", i, present_size, present_offset);
-			
+
 			switch (present) {
 				case IEEE80211_RADIOTAP_Rate:
 					uint8_t rate = *(uint8_t *)(packet + present_offset);
@@ -298,13 +251,14 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
 					printf("   Antenna signal: %d dbm\n", dbm_Antenna_signal);
 					break;
 				case IEEE80211_RADIOTAP_Channel:
-					uint32_t channel_info = *(uint32_t *)(packet + present_offset - sizeof(uint32_t));
+					present_offset = align_offset(present_offset, 2);
+					uint32_t channel_info = *(uint32_t *)(packet + present_offset);
 					uint8_t *channel_info_ptr = (uint8_t *)&channel_info;
-					uint16_t channel_flags  = (channel_info_ptr[1] << 8) | channel_info_ptr[0];
-					uint16_t channel_freq = (channel_info_ptr[3] << 8) | channel_info_ptr[2];
-					
+					uint16_t channel_flags  = (channel_info_ptr[3] << 8) | channel_info_ptr[2];
+					uint16_t channel_freq = (channel_info_ptr[1] << 8) | channel_info_ptr[0];					
 					uint8_t channel = 0;
-
+					
+					
 					if (channel_freq >= 2412 && channel_freq <= 2484) {
 						channel = ieee80211_radiotap_channels_2GHz[channel_freq]; 
 					} else {
@@ -317,27 +271,25 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
 						}
 						exit(1);
 					}
-					
-					printf("\t Flags: 0x%04x:\n", channel_flags);
+					printf("   Channel frequency: %d [BG: %d]\n", channel_freq, channel);
+					printf("   Channel Flags: 0x%04x:\n", channel_flags);
 					
 					for (int j = 0; j < 16; j++) {
 						if (channel_flags & (1U << j)) {
-							printf("\t\t %s (%d)\n", ieee80211_radiotap_channel_flags_names[j], j);
+							printf("      %s (%d)\n", ieee80211_radiotap_channel_flags_names[j], j);
 						}
 					}
 					
-					printf("   Channel frequency: %d (%d)\n", channel_freq, channel); 
+					 
 					break;
 				case IEEE80211_RADIOTAP_Antenna:
 					present_offset = align_offset(present_offset, 1);
 					uint8_t antenna = *(uint8_t *)(packet + present_offset);
-					printf("Antenna: %d\n", antenna);
+					printf("   Antenna: %d\n", antenna);
 					break;
-			}	
-			//printf("Present :: %s (%d), offset: %d, size: %d\n", ieee80211_radiotap_names[i], i, present_offset, present_size);
+			}
 		}
 		present_offset += present_size;
-		//printf("\n");
 	}
 	printf("\n");
 }
