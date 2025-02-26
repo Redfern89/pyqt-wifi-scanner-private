@@ -251,7 +251,13 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
 					printf("   Antenna signal: %d dbm\n", dbm_Antenna_signal);
 					break;
 				case IEEE80211_RADIOTAP_Channel:
-					present_offset = align_offset(present_offset, 2);
+					printf("[DEBUG] Before align: %d\n", present_offset);
+					present_offset = align_offset(present_offset, 4);
+					printf("[DEBUG] After align: %d\n", present_offset);
+					printf("[DEBUG] Aligned offset: %d, expected: %lu\n", present_offset, (unsigned long)(packet + present_offset));
+printf("[DEBUG] Raw Channel Data: %02x %02x %02x %02x\n", 
+       packet[present_offset], packet[present_offset + 1], 
+       packet[present_offset + 2], packet[present_offset + 3]);
 					uint32_t channel_info = *(uint32_t *)(packet + present_offset);
 					uint8_t *channel_info_ptr = (uint8_t *)&channel_info;
 					uint16_t channel_flags  = (channel_info_ptr[3] << 8) | channel_info_ptr[2];
@@ -291,7 +297,49 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u
 		}
 		present_offset += present_size;
 	}
-	printf("\n");
+	
+	printf("\nDump RadioTap:\n");
+	uint8_t al = 0;
+	for (int i = 0; i < rt -> it_len; i++) {
+		if ((i) % 16 == 0) printf("%04x  ", i);
+		printf("%02x ", packet[i]);
+		
+		if ((i +1) % 16 == 0) {
+			printf(" ");
+			for (int j = 0; j < 16; j++) {
+				unsigned char byte = packet[j + al];
+				if (byte >= 32 && byte <= 126) {
+					printf("%c", byte);
+				} else {
+					printf(".");
+				}
+			}
+			al = al + 16;
+		}
+		
+		
+		if ((i + 1) % 8 == 0) printf(" ");
+		if ((i + 1) % 16 == 0) printf("\n");
+	}
+	
+	int remaining = rt->it_len % 16;
+	if (remaining > 0) {
+		// Добавляем пробелы для выравнивания вывода
+		int padding = (16 - remaining) * 3 + (remaining < 8 ? 1 : 0);
+		printf(" %*s", padding, "");
+
+		// Печатаем ASCII для последней строки
+		for (int j = 0; j < remaining; j++) {
+			unsigned char byte = packet[j + al];
+			if (byte >= 32 && byte <= 126) {
+				printf("%c", byte);
+			} else {
+				printf(".");
+			}
+		}
+		printf("\n");
+	}
+	printf("\n\n");
 }
 
 // Функция обработки захваченных пакетов
