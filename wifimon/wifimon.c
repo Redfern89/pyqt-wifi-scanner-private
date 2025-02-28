@@ -7,29 +7,31 @@
 #include <arpa/inet.h>
 
 #include "radiotap/radiotap.h"
+#include "utils/dot11.h"
+
+#include <arpa/inet.h>  // Для ntohs()
+
+int is_beacon_frame(const uint8_t *packet, uint8_t rt_len) {
+	uint16_t frame_control = ntohs	(*(uint16_t *)(packet + rt_len));
+	return (frame_control & 0xFF7C) == 0x8000;
+}
 
 void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *packet) {
 	ieee80211_radiotap_data_t data;
-	if (radiotap_parse(packet, &data) == 0) {
-		printf("RadioTap header Len: %d\n", data.rt_header -> it_len);\
-		printf("Flags: 0x%02x\n", data.flags);
-		
-		for (int i = 0; i < 8; i++) {
-			if (data.flags.value & (1U << i)) {
-				printf(" Flag: %s\n", ieee80211_radiotap_flags_names[i]);
-			}
+	if (radiotap_parse(packet, &data) == 0) {	
+		int next_offset = data.rt_header -> it_len;
+
+		FrameControl *fc = (FrameControl *)packet;
+
+		printf("type=%02x, subtype=%02x\n", fc->type, fc->subtype);
+
+		printf("\n\n");
+
+		for (int i = next_offset; i < h -> len; i++) {
+			printf("%02x ", packet[i]);
+			if ((i + 1) % 16 == 0) printf("\n");
 		}
-		printf("dbm_Antenna_Signal: %d dBm\n", data.dbm_Antenna_Signal);
-		
-		printf("Channel: %d [%d]\n", data.channel, data.channel_frequency);
-		for (int i = 0; i < 16; i++) {
-			if (data.channel_flags.value & (1U << i)) {
-				printf(" Flag: %s\n", ieee80211_radiotap_channel_flags_names[i]);
-			}
-		}
-		
-		printf("Rate: %.1f mB/s\n", data.rate);
-		printf("\n");
+
 	} else {
 		
 	}
@@ -40,8 +42,8 @@ int main() {
     char errbuf[PCAP_ERRBUF_SIZE];
     char *dev = "radio0mon";
     
-    handle = pcap_open_live(dev, BUFSIZ, 1000, 1, errbuf);
-	//handle = pcap_open_offline("test.pcapng", errbuf);
+    //handle = pcap_open_live(dev, BUFSIZ, 1000, 1, errbuf);
+	handle = pcap_open_offline("beacon.pcapng", errbuf);
     if (handle == NULL) {
 		printf("Error opening device %s\n", errbuf);
 		return 1;

@@ -448,8 +448,8 @@ class DeauthDialog(QDialog):
 	
 	def packet_handler(self, pkt):
 		if pkt.haslayer(RadioTap):
-			ap_mac = pkt.addr2
-			st_mac = pkt.addr1
+			ap_mac = pkt.addr1
+			st_mac = pkt.addr2
 
 			if pkt.type == 1 and pkt.subtype == 13:
 				if st_mac in self.stations:
