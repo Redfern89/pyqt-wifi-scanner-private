@@ -1,4 +1,7 @@
 __pycache__
 *.cap
 *.pcap
+*.pcapng
+*.o
 pass
+wifimon
