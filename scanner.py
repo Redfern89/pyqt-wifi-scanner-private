@@ -372,7 +372,7 @@ class MainWindow(QMainWindow):
 		self.supported_channels = []
 		self.interface = None
 		
-		
+		self.interrupt_flag = False
 		self.ouiDB = {}
 		self.ouiCSV_Data = None
 		self.load_oui_csv()
@@ -626,6 +626,7 @@ class MainWindow(QMainWindow):
 	def stop_scan(self):
 		self.btn_stop.setEnabled(False)
 		self.sniffing = False
+		self.interrupt_flag = True
 		self.stop_hopping.set()
 
 		if self.hopper_thread:
@@ -658,6 +659,7 @@ class MainWindow(QMainWindow):
 		if self.sniffing:
 			return
 		
+		self.interrupt_flag = False
 		self.startWorkTimer()
 		self.sniffing = True
 		self.stop_hopping.clear()
@@ -686,8 +688,8 @@ class MainWindow(QMainWindow):
 			time.sleep(0.2)
 
 	def sniff_packets(self):
-		while self.sniffing:
-			sniff(iface=self.interface, prn=self.radio_packets_handler, store=0, timeout=5)
+		#while self.sniffing:
+		sniff(iface=self.interface, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))
 
 	def clear_list(self):
 		while self.model.rowCount() > 0:
@@ -789,11 +791,11 @@ class MainWindow(QMainWindow):
 		self.netCountLabel.setText(f"Networks: {cnt}")
 	
 	def stations_handler(self, pkt):
-		ap_mac = pkt.addr2
+		ap_mac = pkt.addr1
 		if ((ap_mac in self.networks) and (pkt.type == 1 and pkt.subtype in [8, 9])):
-			if pkt.addr1 != broadcast:
+			if pkt.addr2 != broadcast:
 
-				station_MAC = pkt.addr1
+				station_MAC = pkt.addr2
 				station_dBm_AntSignal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else -100
 				station_ChannelFlags = pkt.ChannelFlags if hasattr(pkt, 'ChannelFlags') else '?'
 				station_Rate = pkt.Rate if hasattr(pkt, 'Rate') else '?'

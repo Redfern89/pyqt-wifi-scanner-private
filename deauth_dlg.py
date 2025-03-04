@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 	QStyledItemDelegate, QStyleOptionProgressBar, QStyle, QComboBox, QSizePolicy, QMessageBox, QDialog, QTextEdit, QFileDialog,
 	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox, QCheckBox
 )
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont, QKeyEvent
 from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
 
 import sys
@@ -69,9 +69,13 @@ class ProgressBarDelegate(QStyledItemDelegate):
 		return None
 
 class DeauthDialog(QDialog):
+	def keyPressEvent(self, event: QKeyEvent):
+		print(f'Code: {event.key()}')
+	
 	def __init__(self, interface, bssid, channel, parent=None):
 		super().__init__(parent)
-		
+		self.setFocusPolicy(Qt.StrongFocus)
+
 		self.interrupt_flag = False
 		self.first_beacon_flag = False
 		
@@ -573,8 +577,8 @@ class DeauthDialog(QDialog):
 			time.sleep(1)
 		self.btn_deauth.setEnabled(True)
 		
-#if __name__ == '__main__':
-#	app = QApplication(sys.argv)
-#	window = DeauthDialog('', '', '')
-#	window.show()
-#	sys.exit(app.exec_())
+if __name__ == '__main__':
+	app = QApplication(sys.argv)
+	window = DeauthDialog('', '', '')
+	window.show()
+	sys.exit(app.exec_())
