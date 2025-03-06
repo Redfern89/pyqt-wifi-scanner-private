@@ -3,10 +3,10 @@
 from PyQt5.QtWidgets import (
 	QApplication, QTreeView, QVBoxLayout, QHBoxLayout, QWidget, QHeaderView, QPushButton, QLabel, QProgressBar, 
 	QStyledItemDelegate, QStyleOptionProgressBar, QStyle, QComboBox, QSizePolicy, QMessageBox, QDialog, QTextEdit, QFileDialog,
-	QMainWindow, QTableView, QStatusBar, QCheckBox
+	QMainWindow, QTableView, QStatusBar, QCheckBox, QMenu, QAction
 )
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QPen, QPainterPath, QFont, QPixmap
-from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal, QObject, QMetaObject, Q_ARG, pyqtSlot, QItemSelection, QItemSelectionModel
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QPen, QPainterPath, QFont, QPixmap, QColor
+from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal, QObject, QMetaObject, Q_ARG, pyqtSlot, QItemSelection, QItemSelectionModel, QPoint
 
 import sys
 import json
@@ -39,6 +39,22 @@ broadcast = 'ff:ff:ff:ff:ff:ff'
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
 
+class SSIDColorDelegate(QStyledItemDelegate):
+	def initStyleOption(self, option, index):
+		super().initStyleOption(option, index)
+		if index.column() == 0:
+			text = index.data(Qt.DisplayRole)
+			if text == '<hidden>':
+				font = QFont()
+				font.setBold(True)
+				option.font = font
+	
+	def paint(self, painter, option, index):
+		painter.save()
+		painter.setPen(QPen(QColor(255, 0, 0)))
+		super().paint(painter, option, index)
+		painter.restore()
+	
 class ProgressBarDelegate(QStyledItemDelegate):
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -477,19 +493,20 @@ class MainWindow(QMainWindow):
 		self.model.setHorizontalHeaderLabels(header_labels)
 		self.table.setModel(self.model)
 		
-		self.table.setColumnWidth(0, 200)		# SSID
-		self.table.setColumnWidth(1, 210)		# BSSID
-		self.table.setColumnWidth(2, 50)		# CH
-		self.table.setColumnWidth(3, 70)		# ENC
-		self.table.setColumnWidth(4, 90)		# CIPHER
-		self.table.setColumnWidth(5, 70)		# AKM
-		self.table.setColumnWidth(6, 50)		# WPS
-		self.table.setColumnWidth(7, 250)		# VENDOR
-		self.table.setColumnWidth(8, 100)		# HARDWARE
-		self.table.setColumnWidth(9, 50)		# LCK
-		self.table.setColumnWidth(10, 280)		# RSSI
-		self.table.setColumnWidth(11, 50)		# BEACONS
+		self.table.setColumnWidth(0, 200)      # SSID
+		self.table.setColumnWidth(1, 210)      # BSSID
+		self.table.setColumnWidth(2, 50)       # CH
+		self.table.setColumnWidth(3, 70)       # ENC
+		self.table.setColumnWidth(4, 90)       # CIPHER
+		self.table.setColumnWidth(5, 70)       # AKM
+		self.table.setColumnWidth(6, 50)       # WPS
+		self.table.setColumnWidth(7, 250)      # VENDOR
+		self.table.setColumnWidth(8, 100)      # HARDWARE
+		self.table.setColumnWidth(9, 50)       # LCK
+		self.table.setColumnWidth(10, 280)     # RSSI
+		self.table.setColumnWidth(11, 50)      # BEACONS
 
+		self.table.setItemDelegateForColumn(0, SSIDColorDelegate(self.table))
 		self.table.setItemDelegateForColumn(10, ProgressBarDelegate(self.table))
 		self.table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
 		self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -503,7 +520,23 @@ class MainWindow(QMainWindow):
 
 		self.setCentralWidget(central_widget)
 		central_widget.setLayout(main_layout)
+
+		self.setContextMenuPolicy(Qt.CustomContextMenu)
+		self.table.customContextMenuRequested.connect(self.show_context_menu)
 	
+	def show_context_menu(self, pos: QPoint):
+		index = self.indexAt(pos)
+		if not index.isValid():
+			return
+		
+		menu = QMenu(self)
+
+		action1 = QAction(QIcon("icons/unlocked.png"), "Редактировать", self)
+		action2 = QAction(QIcon("icons/target.png"), "Удалить", self)
+		menu.addAction(action1)
+		menu.addAction(action2)
+		menu.exec_(self.viewport().mapToGlobal(pos))
+
 	def target_select(self):
 		selected_indexes = self.table.selectionModel().selectedRows()
 		if selected_indexes:
@@ -837,7 +870,7 @@ class MainWindow(QMainWindow):
 		channel = dot11_utils.get_channel(pkt)
 		
 		if ((ssid is None) or (ssid == '')):
-			return
+			ssid = '<hidden>'
 			
 		if channel is None:
 			return

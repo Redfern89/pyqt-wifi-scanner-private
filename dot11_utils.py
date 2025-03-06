@@ -23,7 +23,8 @@ def get_chip_vendor(pkt: bytes) -> str:
 		0x8cfdf0: "Qualcomm",  # Qualcomm, Inc
 		0x00a0cc: "Lite-OnC",  # Lite-On Communications, Inc
 		0x4045da: "SpreadTe",  # Spreadtrum Technology, Inc
-		0x506f9a: "Wi-FiAli"   # Wi-Fi Aliance
+		0x506f9a: "Wi-FiAli",  # Wi-Fi Aliance
+		0x18fe34: "Espressi"   # Espressif Inc.
 	}
 
 	index = 0
