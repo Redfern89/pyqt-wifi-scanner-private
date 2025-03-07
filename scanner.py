@@ -553,7 +553,8 @@ class MainWindow(QMainWindow):
 					if not header:
 						break
 					self.pcapfilelen += 1
-					
+				
+				self.networks = {}
 				self.clear_list()
 				self.pcapfilepos = 0
 				self.update_pcapfile_status_pos(0)	
