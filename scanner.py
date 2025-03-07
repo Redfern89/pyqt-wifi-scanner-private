@@ -19,9 +19,10 @@ import threading
 import subprocess
 import random
 import contextlib
+import pcapy
 
 from scapy.all import *
-from functools import partial
+#from functools import partial
 
 import checker
 import wifi_manager
@@ -387,6 +388,9 @@ class MainWindow(QMainWindow):
 		self.networks = {}
 		self.supported_channels = []
 		self.interface = None
+		self.pcapfile = None
+		self.pcapfilelen = 0
+		self.pcapfilepos = 0
 		
 		self.interrupt_flag = False
 		self.ouiDB = {}
@@ -529,15 +533,42 @@ class MainWindow(QMainWindow):
 		self.table.customContextMenuRequested.connect(self.show_context_menu)
 	
 	def open_pcap(self):
-		print('ok')
+		file_path, _ = QFileDialog.getOpenFileName(None, "", "", "Все файлы (*);;Файлы захвата (*.pcap)")
+		if file_path:
+			self.interrupt_flag = False
+			self.pcapfile = file_path
+			self.interfaceIconLabel.setPixmap(QPixmap('icons/binary-code.png').scaled(26, 26, Qt.KeepAspectRatio))
+			
+			try:
+				cap = pcapy.open_offline(self.pcapfile)
+			except pcapy.PcapError as e:
+				QMessageBox.critical(self, "Error", f"Не удалось открыть файл: {str(e)}")
+				cap = None
+				return
+			self.pcapfilelen = 0
+			
+			if cap:
+				while True:
+					(header, packet) = cap.next()
+					if not header:
+						break
+					self.pcapfilelen += 1
+					
+				self.clear_list()
+				self.pcapfilepos = 0
+				self.update_pcapfile_status_pos(0)	
+				self.sniff_thread = threading.Thread(target=self.sniff_packets_offline, daemon=True)
+				self.sniff_thread.start()
+				self.btn_open.setEnabled(False)
+				self.btn_scan.setEnabled(False)
+				self.btn_wifi.setEnabled(False)
+				self.btn_stop.setEnabled(True)
 		
-		self.sniff_thread = threading.Thread(target=self.sniff_packets_offline, daemon=True)
-		self.sniff_thread.start()
-		
+	def update_pcapfile_status_pos(self, pos):
+		self.statusLabel.setText(f"{os.path.basename(self.pcapfile)}, {pos}/{self.pcapfilelen}")
+	
 	def sniff_packets_offline(self):
-		sniff(offline='8146packets_dump.pcapng', prn=self.radio_packets_handler, store=0)
-		#for pkt in rdpcap('8146packets_dump.pcapng'):
-		#	self.radio_packets_handler(pkt, count=100)
+		sniff(offline=self.pcapfile, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))
 		
 	def show_context_menu(self, pos: QPoint):
 		index = self.indexAt(pos)
@@ -618,6 +649,7 @@ class MainWindow(QMainWindow):
 			if not result.get('interface') is None:
 				self.interface = result.get('interface', None)
 				self.supported_channels = result.get('supported_channels', None)
+				self.interfaceIconLabel.setPixmap(QPixmap('icons/ethernet.png').scaled(26, 26, Qt.KeepAspectRatio))
 				self.statusLabel.setText(f"Interface: {self.interface}, CH: ?")
 				self.btn_scan.setEnabled(True)
 	
@@ -673,9 +705,11 @@ class MainWindow(QMainWindow):
 
 	def stop_scan(self):
 		self.btn_stop.setEnabled(False)
+		self.btn_open.setEnabled(True)
 		self.sniffing = False
 		self.interrupt_flag = True
 		self.stop_hopping.set()
+		self.btn_wifi.setEnabled(True)
 
 		if self.hopper_thread:
 			self.hopper_thread.join(timeout=1)
@@ -701,6 +735,7 @@ class MainWindow(QMainWindow):
 		self.btn_stop.setEnabled(True)
 		self.btn_scan.setEnabled(False)
 		self.btn_wifi.setEnabled(False)
+		self.btn_open.setEnabled(False)
 		self.wps_checkbox.setEnabled(False)
 		self.networks = {}
 
@@ -876,6 +911,12 @@ class MainWindow(QMainWindow):
 					self.safe_add_StationsList(self.get_mac_vendor_mixed(ap_mac), stations_json);		
 	
 	def radio_packets_handler(self, pkt):
+		self.pcapfilepos += 1
+		
+		if self.pcapfilepos == self.pcapfilelen:
+			self.stop_scan()
+		
+		self.update_pcapfile_status_pos(self.pcapfilepos)
 		if self.sta_checkbox.isChecked():
 			self.stations_handler(pkt)
 		
