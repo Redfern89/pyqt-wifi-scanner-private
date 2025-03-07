@@ -912,6 +912,9 @@ class MainWindow(QMainWindow):
 					self.safe_add_StationsList(self.get_mac_vendor_mixed(ap_mac), stations_json);		
 	
 	def radio_packets_handler(self, pkt):
+		if not pkt.haslayer(RadioTap):
+			return
+		
 		self.pcapfilepos += 1
 		
 		if self.pcapfilepos == self.pcapfilelen:
