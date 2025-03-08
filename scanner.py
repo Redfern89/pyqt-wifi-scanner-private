@@ -179,6 +179,9 @@ class ChoseWiFiAdapderDialog(QDialog):
 		super().__init__(parent)
 		self.setWindowTitle("Выбор Wifi адаптера")
 		self.setWindowIcon(QIcon('icons/ethernet.png'))
+
+		wifi = misc.WiFiPhyManager()
+		self.devices = wifi.handle_lost_phys()
 		
 		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
 		wh = xrandr_wxh.split('x')

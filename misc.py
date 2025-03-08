@@ -209,13 +209,33 @@ class WiFi_Parser:
 		return ['Open']
 	
 class WiFiPhyManager:
-	def __init__(self, phydev):
-		pass
+	def __init__(self):
+		self.iface_types = {
+			0: 'Unknown',
+			1: 'Station',
+			802: 'Ad-Hoc',
+			803: 'Monitor',
+			804: 'Mesh (802.11s)',
+			805: 'P2P (Direct GO)',
+			806: 'P2P Client'
+		}
 
 	def handle_lost_phys(self):
+		devices = {}
 		if os.path.exists('/sys/class/ieee80211'):
-			return os.listdir('/sys/class/ieee80211') # Каждая, найденая директория - PHYDEV
-		return None
+			phys = os.listdir('/sys/class/ieee80211')
+			for phydev in phys:
+				devices[phydev] = {
+					'phydev': phydev,
+					'interface': self.iface_name_by_phy(phydev),
+					'mode': self.get_phy_mode(phydev),
+					'state': self.get_phy_state(phydev),
+					'channels': self.get_phy_supported_channels(phydev),
+					'driver': self.get_phy_driver(phydev),
+					'chipset': self.get_phy_chipset(phydev)
+				}
+
+		return devices
 
 	def iface_exists(self, iface):
 		return os.path.exists(f"/sys/class/net/{iface}")
@@ -292,21 +312,12 @@ class WiFiPhyManager:
 
 		return None
 
-	def get_phy_type(self, phy):
+	def get_phy_mode(self, phy):
 		iface = self.iface_name_by_phy(phy)
-		iface_types = {
-			0: 'Unknown',
-			1: 'Station',
-			802: 'Ad-Hoc',
-			803: 'Monitor',
-			804: 'Mesh (802.11s)',
-			805: 'P2P (Direct GO)',
-			806: 'P2P Client'
-		}
 		if os.path.exists(f"/sys/class/ieee80211/{phy}/device/net/{iface}/type"):
 			iface_type = int(open(f"/sys/class/ieee80211/{phy}/device/net/{iface}/type", "r").read().strip())
-			return iface_types.get(iface_type, 'Unknown')		
-		return 'Unknown'
+			return int(iface_type)		
+		return 0
 
 	def set_phy_80211_monitor(self, phy):
 		if self.get_phy_type(phy) != 'Monitor':
@@ -364,3 +375,7 @@ class WiFiPhyManager:
 			if match:
 				channels.append(int(match.group(1)))			
 		return channels
+
+wifi = WiFiPhyManager()
+
+print(wifi.handle_lost_phys())
