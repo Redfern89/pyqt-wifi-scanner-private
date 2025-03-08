@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 	QMainWindow, QTableView, QStatusBar, QCheckBox, QMenu, QAction
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QPen, QPainterPath, QFont, QPixmap, QColor
-from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal, QObject, QMetaObject, Q_ARG, pyqtSlot, QItemSelection, QItemSelectionModel, QPoint
+from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal, QObject, QMetaObject, Q_ARG, pyqtSlot, QItemSelection, QItemSelectionModel, QPoint, QRect
 
 import sys
 import json
@@ -22,26 +22,17 @@ import contextlib
 import pcapy
 
 from scapy.all import *
-#from functools import partial
 
 import checker
 import wifi_manager
-import dot11_utils
 import deauth_dlg
 import misc
-
-params1 = {
-	'oui_path': 'data/oui.csv',
-	'row_height': 40,
-	'stations_row_height': 150
-}
-
-broadcast = 'ff:ff:ff:ff:ff:ff'
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
 
 class SSIDColorDelegate(QStyledItemDelegate):
+	'''
 	def initStyleOption(self, option, index):
 		super().initStyleOption(option, index)
 		if index.column() == 0:
@@ -50,12 +41,47 @@ class SSIDColorDelegate(QStyledItemDelegate):
 				font = QFont()
 				font.setBold(True)
 				option.font = font
-	
+	'''
 	def paint(self, painter, option, index):
-		painter.save()
-		painter.setPen(QPen(QColor(255, 0, 0)))
-		super().paint(painter, option, index)
-		painter.restore()
+		data = index.data(Qt.UserRole +1)
+
+		if data == "hidden":
+			painter.save()
+
+			icon = index.data(Qt.DecorationRole)
+			icon_size = option.decorationSize.width() if icon else 0
+			padding = 5  # Отступ от иконки до текста
+			text_x = option.rect.x() + icon_size + (padding if icon else 0)
+			text_y = option.rect.y() + 2  # Чуть ниже, чтобы не прилипало к верху
+			font_bold = QFont()
+			font_bold.setBold(True)
+			font_normal = QFont()
+			font_normal.setItalic(True)
+			font_metrics = painter.fontMetrics()
+			line_height = font_metrics.height()
+
+			if icon:
+				icon_rect = QRect(option.rect.x(), option.rect.y(), icon_size, icon_size)
+				icon.paint(painter, icon_rect, Qt.AlignVCenter)
+
+			painter.setFont(font_bold)
+			painter.setPen(option.palette.text().color())
+			painter.drawText(text_x, text_y-3, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, '<hidden>')
+			painter.setFont(font_normal)
+			painter.setPen(QColor(Qt.gray))
+			painter.drawText(text_x, text_y + line_height, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, "(pending)")
+
+			painter.restore()
+		else:
+			super().paint(painter, option, index)
+
+
+class MonoFontDeligate(QStyledItemDelegate):
+	def initStyleOption(self, option, index):
+		super().initStyleOption(option, index)
+		#if index.column() == 0:
+		option.font = QFont("monospace", 9)
+		#option.font = QFont("Courier New", 9)
 	
 class ProgressBarDelegate(QStyledItemDelegate):
 	def __init__(self, parent=None):
@@ -386,11 +412,13 @@ class MainWindow(QMainWindow):
 		super().__init__()
 		
 		self.networks = {}
+		self.hidden_networks = {}
 		self.supported_channels = []
 		self.interface = None
 		self.pcapfile = None
 		self.pcapfilelen = 0
 		self.pcapfilepos = 0
+		self.online = 0
 		
 		self.interrupt_flag = False
 		self.ouiDB = {}
@@ -515,6 +543,8 @@ class MainWindow(QMainWindow):
 		self.table.setColumnWidth(10, 50)      # BEACONS
 
 		self.table.setItemDelegateForColumn(0, SSIDColorDelegate(self.table))
+		self.table.setItemDelegateForColumn(1, MonoFontDeligate(self.table))
+		self.table.setItemDelegateForColumn(7, MonoFontDeligate(self.table))
 		self.table.setItemDelegateForColumn(9, ProgressBarDelegate(self.table))
 		self.table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
 		self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -532,45 +562,41 @@ class MainWindow(QMainWindow):
 		self.setContextMenuPolicy(Qt.CustomContextMenu)
 		self.table.customContextMenuRequested.connect(self.show_context_menu)
 	
+	def pcap_packets_count(self, file):
+		cap = pcapy.open_offline(file)
+		count = 0
+		while True:
+			header, _ = cap.next()
+			if not header:
+				break
+			count += 1
+		return count
+
 	def open_pcap(self):
 		file_path, _ = QFileDialog.getOpenFileName(None, "", "", "Все файлы (*);;Файлы захвата (*.pcap)")
 		if file_path:
 			self.interrupt_flag = False
 			self.pcapfile = file_path
-			self.interfaceIconLabel.setPixmap(QPixmap('icons/binary-code.png').scaled(26, 26, Qt.KeepAspectRatio))
-			
-			try:
-				cap = pcapy.open_offline(self.pcapfile)
-			except pcapy.PcapError as e:
-				QMessageBox.critical(self, "Error", f"Не удалось открыть файл: {str(e)}")
-				cap = None
-				return
-			self.pcapfilelen = 0
-			
-			if cap:
-				while True:
-					(header, packet) = cap.next()
-					if not header:
-						break
-					self.pcapfilelen += 1
-				
-				self.networks = {}
-				self.clear_list()
-				self.pcapfilepos = 0
-				self.update_pcapfile_status_pos(0)	
-				self.sniff_thread = threading.Thread(target=self.sniff_packets_offline, daemon=True)
-				self.sniff_thread.start()
-				self.btn_open.setEnabled(False)
-				self.btn_scan.setEnabled(False)
-				self.btn_wifi.setEnabled(False)
-				self.btn_stop.setEnabled(True)
+			self.pcapfilelen = self.pcap_packets_count(file_path)
+			self.pcapfilepos = 0
+			self.interfaceIconLabel.setPixmap(QPixmap('icons/binary-code.png').scaled(26, 26, Qt.KeepAspectRatio))			
+			self.networks = {}
+			self.clear_list()
+			self.pcapfilepos = 0
+			self.update_pcapfile_status_pos(0)	
+			self.sniff_thread = threading.Thread(target=self.sniff_packets_offline, daemon=True)
+			self.sniff_thread.start()
+			self.btn_open.setEnabled(False)
+			self.btn_scan.setEnabled(False)
+			self.btn_wifi.setEnabled(False)
+			self.btn_stop.setEnabled(True)
 		
 	def update_pcapfile_status_pos(self, pos):
-		self.statusLabel.setText(f"{os.path.basename(self.pcapfile)}, {pos}/{self.pcapfilelen}")
+		self.statusLabel.setText(f"{os.path.basename(self.pcapfile)}, ({self.pcapfilepos}/{self.pcapfilelen})")
 	
 	def sniff_packets_offline(self):
 		sniff(offline=self.pcapfile, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))
-		
+	
 	def show_context_menu(self, pos: QPoint):
 		index = self.indexAt(pos)
 		if not index.isValid():
@@ -590,7 +616,7 @@ class MainWindow(QMainWindow):
 			if self.interface:
 				row = selected_indexes[0].row()
 				model = self.table.model()
-				bssid = model.data(model.index(row, 1))
+				bssid = model.data(model.index(row, 1), Qt.UserRole)
 				channel = model.data(model.index(row, 2))
 				if bssid:
 					targetWindow = deauth_dlg.DeauthDialog(self.interface, bssid, channel, self)
@@ -615,7 +641,8 @@ class MainWindow(QMainWindow):
 		if mac:
 			vendor = self.get_mac_vendor(mac)
 			if vendor != 'Unknown':
-				return f"{vendor[:9].replace(' ', '')}_{mac[9:].upper()}"
+				vendor_cleaned = re.sub(r'[ ,.""]', '', vendor)
+				return f"{vendor_cleaned[:8]}_{mac[9:].upper()}"
 			else:
 				return mac.upper()
 		else:
@@ -744,6 +771,7 @@ class MainWindow(QMainWindow):
 			return
 		
 		self.interrupt_flag = False
+		self.online = 1
 		self.startWorkTimer()
 		self.sniffing = True
 		self.stop_hopping.clear()
@@ -772,7 +800,6 @@ class MainWindow(QMainWindow):
 			time.sleep(0.2)
 
 	def sniff_packets(self):
-		#while self.sniffing:
 		sniff(iface=self.interface, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))
 
 	def clear_list(self):
@@ -786,13 +813,21 @@ class MainWindow(QMainWindow):
 	def __add_table_item(self, json_data):
 		rows = []
 		data = json.loads(json_data)
+		is_hidden = data.get('hidden', None)
+
 		for key, value in data.items():
 			if key in ['ssid', 'bssid', 'channel', 'enc', 'cipher', 'akm', 'wps_version', 'vendor', 'chip', 'locked', 'signal', 'beacons']:
 				if key == 'ssid':
 					item = QStandardItem(QIcon('icons/wifi-router.png'), value)
+					if is_hidden:
+						item.setData('hidden', Qt.UserRole +1)	
 				elif key == 'bssid':
 					item = QStandardItem(str(value.get('mixed', None)))
 					item.setData(value.get('mac', None), Qt.UserRole)
+				elif key == 'cipher' or key == 'akm':
+					item = QStandardItem(','.join(value))
+				elif key == 'enc':
+					item = QStandardItem('/'.join(value))
 				else:
 					item = QStandardItem(str(value))
 				rows.append(item)
@@ -881,7 +916,7 @@ class MainWindow(QMainWindow):
 	def stations_handler(self, pkt):
 		ap_mac = pkt.addr1
 		if ((ap_mac in self.networks) and (pkt.type == 1 and pkt.subtype in [8, 9])):
-			if pkt.addr2 != broadcast:
+			if pkt.addr2 != 'ff:ff:ff:ff:ff:ff':
 				
 				wifi = misc.WiFi_Parser(pkt)
 				station_MAC = pkt.addr2
@@ -912,15 +947,15 @@ class MainWindow(QMainWindow):
 					self.safe_add_StationsList(self.get_mac_vendor_mixed(ap_mac), stations_json);		
 	
 	def radio_packets_handler(self, pkt):
+		if self.online == 0:
+			self.pcapfilepos += 1
+			self.update_pcapfile_status_pos(self.pcapfilepos)
+
+			if self.pcapfilepos == self.pcapfilelen:
+				self.stop_scan()
+
 		if not pkt.haslayer(RadioTap):
 			return
-		
-		self.pcapfilepos += 1
-		
-		if self.pcapfilepos == self.pcapfilelen:
-			self.stop_scan()
-		
-		self.update_pcapfile_status_pos(self.pcapfilepos)
 		if self.sta_checkbox.isChecked():
 			self.stations_handler(pkt)
 		
@@ -941,15 +976,9 @@ class MainWindow(QMainWindow):
 			
 		if not bssid in self.networks:
 			ssid = wifi.ssid()
-			
-			if ssid is None:
-				ssid = '<hidden>'
-			
 			rsn_info = wifi.get_rsn_info()
 			enc = wifi.get_enc_type()
-			
-			akms = ','.join(rsn_info['akm'])
-			ciphers = ','.join(rsn_info['pairwise'])
+			hardware = wifi.get_vendor_string()
 			wps_info = wifi.wps_info()
 			wps_version = '-'
 			wps_locked = '-'
@@ -964,7 +993,13 @@ class MainWindow(QMainWindow):
 				else:
 					wps_locked = 'No'
 			
-			hardware = wifi.get_vendor_string()
+			
+			if ssid is None:
+				if not bssid in self.hidden_networks:
+					self.hidden_networks[bssid] = {
+						'bssid': bssid,
+						'channel': channel
+					}
 		
 			self.networks[bssid] = {
 				'ssid': ssid,
@@ -974,14 +1009,15 @@ class MainWindow(QMainWindow):
 				},
 				'channel': channel,
 				'enc': enc,
-				'cipher': ciphers,
-				'akm': akms,
+				'cipher': rsn_info['pairwise'],
+				'akm': rsn_info['akm'],
 				'wps_version': wps_version,
 				'chip': hardware,
 				'locked': wps_locked,
 				'signal': int(signal),
 				'beacons': 1,
 				'packet': pkt,
+				'hidden': ssid is None,
 				'stations': {},
 			}
 			

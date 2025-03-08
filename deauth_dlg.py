@@ -20,7 +20,7 @@ import shutil
 from scapy.all import *
 
 import wifi_manager
-import dot11_utils
+import misc
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
@@ -69,9 +69,6 @@ class ProgressBarDelegate(QStyledItemDelegate):
 		return None
 
 class DeauthDialog(QDialog):
-	def keyPressEvent(self, event: QKeyEvent):
-		print(f'Code: {event.key()}')
-	
 	def __init__(self, interface, bssid, channel, parent=None):
 		super().__init__(parent)
 		self.setFocusPolicy(Qt.StrongFocus)
@@ -542,10 +539,11 @@ class DeauthDialog(QDialog):
 			bssid = pkt.addr3
 			if bssid == self.bssid:
 				self.beacons += 1
-				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
-				ssid = pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
+				wifi = misc.WiFi_Parser(pkt)
+				signal = wifi.RadioTap_Attr('dBm_AntSignal') #pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
+				ssid = wifi.ssid() #pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
 				self.ssid = ssid
-				channel = dot11_utils.get_channel(pkt)
+				#channel =  #dot11_utils.get_channel(pkt)
 				
 				if not self.first_beacon_flag:
 					self.first_beacon_flag = True
