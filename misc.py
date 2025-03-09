@@ -279,7 +279,6 @@ class WiFiPhyManager:
 				return data.get('DRIVER')
 		return None
 
-
 	def get_phy_chipset(self, phy):
 		iface = self.iface_name_by_phy(phy)
 		if os.path.exists(f"/sys/class/ieee80211/{phy}/device/modalias"):
@@ -374,13 +373,12 @@ class WiFiPhyManager:
 		subprocess.run(["iwconfig", interface, "channel", str(ch)], capture_output=True, text=True)
 
 	def get_phy_supported_channels(self, phydev):
-		channels_data = subprocess.run(['iw', 'phy', phydev, 'channels'], capture_output=True, text=True).stdout
 		channels = []
-		for line in channels_data.splitlines():
-			match = re.search('MHz \[(\d+)\]', line)
+		channels_data = subprocess.run(['iw', 'phy', phydev, 'channels'], capture_output=True, text=True).stdout
+		channels_data = channels_data.split('* ')[1:]
+		for channel_data in channels_data:
+			match = re.search(r'(\d+) MHz \[(\d+)\]', channel_data)
 			if match:
-				channels.append(int(match.group(1)))			
+				if not 'No IR' in channel_data:
+					channels.append(match.group(2))
 		return channels
-
-#wifi = WiFiPhyManager()
-#print(wifi.handle_lost_phys())

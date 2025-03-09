@@ -31,16 +31,6 @@ def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
 
 class SSIDColorDelegate(QStyledItemDelegate):
-	'''
-	def initStyleOption(self, option, index):
-		super().initStyleOption(option, index)
-		if index.column() == 0:
-			text = index.data(Qt.DisplayRole)
-			if text == '<hidden>':
-				font = QFont()
-				font.setBold(True)
-				option.font = font
-	'''
 	def paint(self, painter, option, index):
 		data = index.data(Qt.UserRole +1)
 
