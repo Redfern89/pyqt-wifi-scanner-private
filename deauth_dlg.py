@@ -18,8 +18,6 @@ import pcapy
 import shutil
 
 from scapy.all import *
-
-import wifi_manager
 import misc
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
@@ -294,8 +292,9 @@ class DeauthDialog(QDialog):
 		self.refresh_timer.setInterval(1)
 		self.refresh_timer.timeout.connect(self.refresh_oher_data)
 		self.refresh_timer.start()
-		
-		wifi_manager.switch_iface_channel(self.interface, self.channel)
+		self.wifi = misc.WiFiPhyManager()
+
+		self.wifi.switch_iface_channel(self.interface, self.channel)
 		self.beacons = 0
 		signal.signal(signal.SIGINT, self.handle_interrupt)
 		self.log_add(f"[+] Switching {self.interface} to channel {self.channel}")
@@ -449,14 +448,15 @@ class DeauthDialog(QDialog):
 	
 	def packet_handler(self, pkt):
 		if pkt.haslayer(RadioTap):
-			ap_mac = pkt.addr1
-			st_mac = pkt.addr2
+			st_mac = pkt.addr1
 
 			if pkt.type == 1 and pkt.subtype == 13:
 				if st_mac in self.stations:
 					self.stations[st_mac]['acks'] += 1
 					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 3, str(self.stations[st_mac]['acks']))
 			
+			ap_mac = pkt.addr1
+			st_mac = pkt.addr2
 
 			if ((ap_mac == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):
 				signal = pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None

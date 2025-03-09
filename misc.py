@@ -220,6 +220,11 @@ class WiFiPhyManager:
 			806: 'P2P Client'
 		}
 
+		self.iface_states = {
+			0: 'DOWN',
+			1: 'UP'
+		}
+
 	def handle_lost_phys(self):
 		devices = {}
 		if os.path.exists('/sys/class/ieee80211'):
@@ -228,11 +233,12 @@ class WiFiPhyManager:
 				devices[phydev] = {
 					'phydev': phydev,
 					'interface': self.iface_name_by_phy(phydev),
-					'mode': self.get_phy_mode(phydev),
-					'state': self.get_phy_state(phydev),
-					'channels': self.get_phy_supported_channels(phydev),
+					'mac': self.get_phy_mac(phydev),
 					'driver': self.get_phy_driver(phydev),
-					'chipset': self.get_phy_chipset(phydev)
+					'chipset': self.get_phy_chipset(phydev),
+					'state': self.get_phy_state(phydev),
+					'mode': self.get_phy_mode(phydev),
+					'channels': self.get_phy_supported_channels(phydev),
 				}
 
 		return devices
@@ -320,7 +326,7 @@ class WiFiPhyManager:
 		return 0
 
 	def set_phy_80211_monitor(self, phy):
-		if self.get_phy_type(phy) != 'Monitor':
+		if self.get_phy_mode(phy) != 803:
 			iface = self.iface_name_by_phy(phy)
 			self.set_phy_link(phy, 'down')
 			time.sleep(1)
@@ -337,13 +343,13 @@ class WiFiPhyManager:
 				subprocess.run(['iw', 'dev', iface, 'del'], capture_output=True, text=True)
 				time.sleep(1)
 				
-				if self.get_phy_type(phy) == 'Monitor':
+				if self.get_phy_mode(phy) == 803:
 					self.set_phy_link(phy, 'up')
 				else:
 					subprocess.run(['iw', 'dev', mon_iface, 'del'], capture_output=True, text=True)
 		
 	def set_phy_80211_station(self, phy):
-		if self.get_phy_type(phy) == 'Monitor':
+		if self.get_phy_mode(phy) == 803:
 			iface = self.iface_name_by_phy(phy)
 			self.set_phy_link(phy, 'down')
 			if self.get_phy_state(phy) == False:
@@ -376,6 +382,5 @@ class WiFiPhyManager:
 				channels.append(int(match.group(1)))			
 		return channels
 
-wifi = WiFiPhyManager()
-
-print(wifi.handle_lost_phys())
+#wifi = WiFiPhyManager()
+#print(wifi.handle_lost_phys())

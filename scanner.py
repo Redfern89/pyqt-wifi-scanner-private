@@ -24,7 +24,6 @@ import pcapy
 from scapy.all import *
 
 import checker
-import wifi_manager
 import deauth_dlg
 import misc
 
@@ -180,8 +179,8 @@ class ChoseWiFiAdapderDialog(QDialog):
 		self.setWindowTitle("Выбор Wifi адаптера")
 		self.setWindowIcon(QIcon('icons/ethernet.png'))
 
-		wifi = misc.WiFiPhyManager()
-		self.devices = wifi.handle_lost_phys()
+		self.wifi = misc.WiFiPhyManager()
+		self.devices = self.wifi.handle_lost_phys()
 		
 		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
 		wh = xrandr_wxh.split('x')
@@ -247,17 +246,18 @@ class ChoseWiFiAdapderDialog(QDialog):
 	def select_iface(self):
 		result = {}
 		selected = self.table.selectionModel().currentIndex()
+		model = self.table.model()
 		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
 		iface = self.table.model().data(self.table.model().index(selected.row(), 1))
 
-		if wifi_manager.iface_exists(iface) == False:
+		if self.wifi.iface_exists(iface) == False:
 			QMessageBox.critical(self, "Error", f"Интерфейса {interface} не существует!")
 			self.update_list()
 			return
 		
 		result = {
 			'interface': iface,
-			'supported_channels': wifi_manager.get_phy_supported_channels(phy)
+			'supported_channels': self.wifi.get_phy_supported_channels(phy)
 		}
 		self.accept()
 
@@ -271,17 +271,18 @@ class ChoseWiFiAdapderDialog(QDialog):
 			self.btn_updown.setEnabled(True)
 			self.btn_mode.setEnabled(True)
 			
-			mode = self.model.itemFromIndex(self.model.index(row, 6)).text()
-			state = self.model.itemFromIndex(self.model.index(row, 5)).text()
-			
-			if mode == 'Monitor':
+			model = self.model
+			state = model.itemFromIndex(model.index(row, 5)).data(Qt.UserRole)
+			mode = model.itemFromIndex(model.index(row, 6)).data(Qt.UserRole +1)
+
+			if mode == 803:
 				self.btn_mode.setText('В режим станции')
 				self.btn_mode.setIcon(QIcon('icons/global-network.png'))
 			else:
 				self.btn_mode.setText('В режим мониторинга')
 				self.btn_mode.setIcon(QIcon('icons/connections.png'))
 
-			if state == 'UP':
+			if state == True:
 				self.btn_updown.setText('Отключить')
 				self.btn_updown.setIcon(QIcon('icons/down-arrow.png'))
 			else:
@@ -292,42 +293,44 @@ class ChoseWiFiAdapderDialog(QDialog):
 			self.btn_mode.setEnabled(False)
 		
 	def update_list(self):
+		self.devices = self.wifi.handle_lost_phys()
 		self.model.setRowCount(0)
-		phys = wifi_manager.handle_lost_phys()
-		if phys is not None:
-			for phy in phys:
-				self.add_wifi_dev_item(phy)
-	
-	def add_wifi_dev_item(self, phy):
-		PHYItem = QStandardItem(QIcon('icons/ethernet.png'), phy.upper())
-		IFACEItem = QStandardItem(wifi_manager.iface_name_by_phy(phy))
-		MACItem = QStandardItem(wifi_manager.get_phy_mac(phy).upper())
-		DRIVERItem = QStandardItem(wifi_manager.get_phy_driver(phy))
-		CHIPItem = QStandardItem(wifi_manager.get_phy_chipset(phy))
-		STATEItem = QStandardItem('UP' if wifi_manager.get_phy_state(phy) else 'DOWN')
-		IFACETYPEItem = QStandardItem(wifi_manager.get_phy_type(phy))
-		
-		row = [PHYItem, IFACEItem, MACItem, DRIVERItem, CHIPItem, STATEItem, IFACETYPEItem]
-		
-		self.model.appendRow(row)
-		row_number = self.model.rowCount() -1
-		self.table.setRowHeight(row_number, 40)
+
+		for key, val in self.devices.items():
+			items = []
+			for k, v in val.items():
+				if k != 'channels':
+					if k == 'phydev':
+						item = QStandardItem(QIcon('icons/ethernet.png'), v)
+					elif k == 'state':
+						item = QStandardItem(self.wifi.iface_states.get(v, '-'))
+						item.setData(v, Qt.UserRole)
+					elif k == 'mode':
+						item = QStandardItem(self.wifi.iface_types.get(v, '-'))
+						item.setData(v, Qt.UserRole +1)
+					else:
+						item = QStandardItem(str(v))
+					items.append(item)
+			self.model.appendRow(items)
+			row_number = self.model.rowCount() -1
+			self.table.setRowHeight(row_number, 40)
 	
 	def updown_iface(self):
 		selected = self.table.selectionModel().currentIndex()
+		model = self.table.model()
 		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
 		iface = self.table.model().data(self.table.model().index(selected.row(), 1)).lower()
-		state = self.table.model().data(self.table.model().index(selected.row(), 5))
+		state = self.table.model().data(self.table.model().index(selected.row(), 5), Qt.UserRole)
 		
-		if state == 'UP':
-			wifi_manager.set_phy_link(phy, 'down')
+		if state == True:
+			self.wifi.set_phy_link(phy, 'down')
 			time.sleep(1)
-			if wifi_manager.get_phy_state(phy) != False:
+			if self.wifi.get_phy_state(phy) != False:
 				QMessageBox.critical(self, "Error", f"Не возможно отключить {iface}!")
 		else:
-			wifi_manager.set_phy_link(phy, 'up')
+			self.wifi.set_phy_link(phy, 'up')
 			time.sleep(1)
-			if wifi_manager.get_phy_state(phy) != True:
+			if self.wifi.get_phy_state(phy) != True:
 				QMessageBox.critical(self, "Error", f"Не возможно включить {iface}!")
 			
 		self.update_list()
@@ -336,15 +339,15 @@ class ChoseWiFiAdapderDialog(QDialog):
 		selected = self.table.selectionModel().currentIndex()
 		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
 		iface = self.table.model().data(self.table.model().index(selected.row(), 1)).lower()
-		mode = self.table.model().data(self.table.model().index(selected.row(), 6)).lower()
+		mode = self.table.model().data(self.table.model().index(selected.row(), 6), Qt.UserRole +1)
 		
-		if mode == 'monitor':
-			wifi_manager.set_phy_80211_station(phy)
-			if wifi_manager.get_phy_type(phy) != 'Station':
+		if mode == 803:
+			self.wifi.set_phy_80211_station(phy)
+			if self.wifi.get_phy_mode(phy) != 1:
 				QMessageBox.critical(self, "Error", f"Не возможно переключить {iface} в режим станции!")
 		else:
-			wifi_manager.set_phy_80211_monitor(phy)
-			if wifi_manager.get_phy_type(phy) != 'Monitor':
+			self.wifi.set_phy_80211_monitor(phy)
+			if self.wifi.get_phy_mode(phy) != 803:
 				QMessageBox.critical(self, "Error", f"Не возможно переключить {iface} в режим мониторинга!")		
 		
 		self.update_list()
@@ -414,6 +417,8 @@ class MainWindow(QMainWindow):
 	def __init__(self):
 		super().__init__()
 		
+		self.wifi = misc.WiFiPhyManager()
+
 		self.networks = {}
 		self.hidden_networks = {}
 		self.supported_channels = []
@@ -754,11 +759,11 @@ class MainWindow(QMainWindow):
 
 	def scan_networks(self):
 		global interface
-		if wifi_manager.get_iface_state(self.interface) == False:
+		if self.wifi.get_iface_state(self.interface) == False:
 			QMessageBox.critical(self, "Error", f"Интерфейс {interface} выключен!")
 			return
 			
-		if wifi_manager.iface_exists(self.interface) == False:
+		if self.wifi.iface_exists(self.interface) == False:
 			QMessageBox.critical(self, "Error", f"Интерфейса {interface} не существует!")
 			return
 		
@@ -795,10 +800,10 @@ class MainWindow(QMainWindow):
 			if self.stop_hopping.is_set():
 				break
 			ch = random.choice(self.supported_channels)
-			wifi_manager.switch_iface_channel(self.interface, ch)
+			self.wifi.switch_iface_channel(self.interface, ch)
 			
 			#for ch in self.supported_channels:
-			wifi_manager.switch_iface_channel(self.interface, ch)
+			self.wifi.switch_iface_channel(self.interface, ch)
 			self.safe_chlabel_set_ch(str(ch))
 			time.sleep(0.2)
 
