@@ -118,6 +118,7 @@ class HexDumpDialog(QDialog):
 	
 	def ascii_editor_select(self):
 		cursor = self.text_editAscii.textCursor() 
+		cursor_pos = cursor.position()
 		print(cursor.position())
 		
 	def save_pcap(self):
