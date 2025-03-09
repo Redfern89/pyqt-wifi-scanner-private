@@ -81,7 +81,8 @@ class HexDumpDialog(QDialog):
 			
 		i = 0
 		for byte in self.raw:
-			if byte >= 32 and byte <= 136:
+			char = chr(byte)
+			if byte >= 32 and byte <= 126:
 				self.text_editAscii.insertPlainText(chr(byte))
 			else:
 				self.text_editAscii.insertPlainText('.')
