@@ -24,6 +24,8 @@ import pcapy
 from scapy.all import *
 
 import checker
+import hexdump
+import wifiman
 import deauth_dlg
 import misc
 
@@ -111,48 +113,6 @@ class ProgressBarDelegate(QStyledItemDelegate):
 
 	def createEditor(self, parent, option, index):
 		return None
-		
-class HexDumpDialog(QDialog):
-	def __init__(self, hexdump_data, ssid, pkt, parent=None):
-		super().__init__(parent)
-
-		self.setWindowTitle(f"HexDump Data for \"{ssid}\"")
-		self.setGeometry(200, 200, 700, 410)
-
-		font = QFont("Courier")
-		font.setStyleHint(QFont.TypeWriter)
-
-		self.text_edit = QTextEdit(self)
-		self.text_edit.setReadOnly(True)
-		self.text_edit.setFont(font)
-		self.text_edit.setPlainText(hexdump_data)
-
-		self.btn_save = QPushButton('Сохранить в pcap-файл')
-		self.btn_save.clicked.connect(self.save_pcap)
-		
-		self.pkt = pkt
-		self.ssid = ssid
-		
-		top_layout = QHBoxLayout()
-		top_layout.addWidget(self.btn_save)
-		top_layout.setContentsMargins(5, 5, 5, 0)
-		top_layout.addStretch()
-
-		main_layout = QVBoxLayout()
-		main_layout.addLayout(top_layout)
-		main_layout.addWidget(self.text_edit)
-		main_layout.setContentsMargins(0, 0, 0, 0)
-		self.setLayout(main_layout)
-		
-	def save_pcap(self):
-		options = QFileDialog.Options()
-		file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить как", f"{self.ssid}.pcap", "PCAP Files (*.pcap)", options=options)
-		
-		if file_path:
-			try:
-				wrpcap(file_path, self.pkt)
-			except Exception as e:
-				print('Error')
 
 class MyTableView(QTableView):
 	def mousePressEvent(self, event):
@@ -162,185 +122,6 @@ class MyTableView(QTableView):
 		else:
 			super().mousePressEvent(event)
 			self.btn_refresh.setEnabled(True)
-		
-class ChoseWiFiAdapderDialog(QDialog):
-	def __init__(self, parent=None):
-		super().__init__(parent)
-		self.setWindowTitle("Выбор Wifi адаптера")
-		self.setWindowIcon(QIcon('icons/ethernet.png'))
-
-		self.wifi = misc.WiFiPhyManager()
-		self.devices = self.wifi.handle_lost_phys()
-		
-		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
-		wh = xrandr_wxh.split('x')
-		w = 1120
-		h = 520
-		x = round((int(wh[0]) / 2) - (w / 2))
-		y = round((int(wh[1]) / 2) - (h / 2))
-		self.setGeometry(x, y, w, h)
-		
-		self.table = QTableView(self)
-		self.model = QStandardItemModel(0, 5, self)
-		self.model.setHorizontalHeaderLabels(['PHY', 'Interface', 'MAC', 'Driver', 'Chipset', 'State', 'Mode'])
-
-		self.table.setModel(self.model)
-		self.table.horizontalHeader().setStretchLastSection(True)
-		self.table.setEditTriggers(QTableView.NoEditTriggers)
-		self.table.setShowGrid(False)
-		self.table.verticalHeader().setVisible(False)
-		self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
-		self.table.setIconSize(QSize(32, 32))
-		self.table.selectionModel().selectionChanged.connect(self.on_selection_changed)
-		self.table.doubleClicked.connect(self.select_iface)
-
-		self.table.setColumnWidth(0, 90)
-		self.table.setColumnWidth(1, 150)
-		self.table.setColumnWidth(2, 150)
-		self.table.setColumnWidth(4, 350)
-
-		self.btn_refresh = QPushButton('Обновить')
-		self.btn_updown = QPushButton('Поднять')
-		self.btn_mode = QPushButton('Режим мониторинга')
-		
-		self.btn_refresh.setIcon(QIcon('icons/refresh.png'))
-		self.btn_updown.setIcon(QIcon('icons/upward-arrow.png'))
-		self.btn_mode.setIcon(QIcon('icons/connections.png'))
-		
-		self.btn_refresh.setIconSize(QSize(24, 24))
-		self.btn_updown.setIconSize(QSize(24, 24))
-		self.btn_mode.setIconSize(QSize(24, 24))
-		
-		self.btn_updown.setEnabled(False)
-		self.btn_mode.setEnabled(False)
-		
-		self.btn_mode.clicked.connect(self.switch_iface_mode)
-		self.btn_refresh.clicked.connect(self.update_list)
-		self.btn_updown.clicked.connect(self.updown_iface)
-		
-		top_layout = QHBoxLayout()
-		top_layout.addWidget(self.btn_refresh)
-		top_layout.addWidget(self.btn_updown)
-		top_layout.addWidget(self.btn_mode)
-		top_layout.setContentsMargins(5, 5, 5, 0)
-		top_layout.addStretch()
-
-		main_layout = QVBoxLayout()
-		main_layout.addLayout(top_layout)
-		main_layout.addWidget(self.table)
-		main_layout.setContentsMargins(0, 0, 0, 0)
-		self.setLayout(main_layout)
-		
-		self.update_list()
-	
-	def select_iface(self):
-		result = {}
-		selected = self.table.selectionModel().currentIndex()
-		model = self.table.model()
-		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
-		iface = self.table.model().data(self.table.model().index(selected.row(), 1))
-
-		if self.wifi.iface_exists(iface) == False:
-			QMessageBox.critical(self, "Error", f"Интерфейса {interface} не существует!")
-			self.update_list()
-			return
-		
-		result = {
-			'interface': iface,
-			'supported_channels': self.wifi.get_phy_supported_channels(phy)
-		}
-		self.accept()
-
-		return result
-		
-	def on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
-		indexes = selected.indexes()
-		
-		if indexes:
-			row = indexes[0].row()
-			self.btn_updown.setEnabled(True)
-			self.btn_mode.setEnabled(True)
-			
-			model = self.model
-			state = model.itemFromIndex(model.index(row, 5)).data(Qt.UserRole)
-			mode = model.itemFromIndex(model.index(row, 6)).data(Qt.UserRole +1)
-
-			if mode == 803:
-				self.btn_mode.setText('В режим станции')
-				self.btn_mode.setIcon(QIcon('icons/global-network.png'))
-			else:
-				self.btn_mode.setText('В режим мониторинга')
-				self.btn_mode.setIcon(QIcon('icons/connections.png'))
-
-			if state == True:
-				self.btn_updown.setText('Отключить')
-				self.btn_updown.setIcon(QIcon('icons/down-arrow.png'))
-			else:
-				self.btn_updown.setText('Поднять')
-				self.btn_updown.setIcon(QIcon('icons/upward-arrow.png'))
-		else:
-			self.btn_updown.setEnabled(False)
-			self.btn_mode.setEnabled(False)
-		
-	def update_list(self):
-		self.devices = self.wifi.handle_lost_phys()
-		self.model.setRowCount(0)
-
-		for key, val in self.devices.items():
-			items = []
-			for k, v in val.items():
-				if k != 'channels':
-					if k == 'phydev':
-						item = QStandardItem(QIcon('icons/ethernet.png'), v)
-					elif k == 'state':
-						item = QStandardItem(self.wifi.iface_states.get(v, '-'))
-						item.setData(v, Qt.UserRole)
-					elif k == 'mode':
-						item = QStandardItem(self.wifi.iface_types.get(v, '-'))
-						item.setData(v, Qt.UserRole +1)
-					else:
-						item = QStandardItem(str(v))
-					items.append(item)
-			self.model.appendRow(items)
-			row_number = self.model.rowCount() -1
-			self.table.setRowHeight(row_number, 40)
-	
-	def updown_iface(self):
-		selected = self.table.selectionModel().currentIndex()
-		model = self.table.model()
-		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
-		iface = self.table.model().data(self.table.model().index(selected.row(), 1)).lower()
-		state = self.table.model().data(self.table.model().index(selected.row(), 5), Qt.UserRole)
-		
-		if state == True:
-			self.wifi.set_phy_link(phy, 'down')
-			time.sleep(1)
-			if self.wifi.get_phy_state(phy) != False:
-				QMessageBox.critical(self, "Error", f"Не возможно отключить {iface}!")
-		else:
-			self.wifi.set_phy_link(phy, 'up')
-			time.sleep(1)
-			if self.wifi.get_phy_state(phy) != True:
-				QMessageBox.critical(self, "Error", f"Не возможно включить {iface}!")
-			
-		self.update_list()
-	
-	def switch_iface_mode(self):
-		selected = self.table.selectionModel().currentIndex()
-		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
-		iface = self.table.model().data(self.table.model().index(selected.row(), 1)).lower()
-		mode = self.table.model().data(self.table.model().index(selected.row(), 6), Qt.UserRole +1)
-		
-		if mode == 803:
-			self.wifi.set_phy_80211_station(phy)
-			if self.wifi.get_phy_mode(phy) != 1:
-				QMessageBox.critical(self, "Error", f"Не возможно переключить {iface} в режим станции!")
-		else:
-			self.wifi.set_phy_80211_monitor(phy)
-			if self.wifi.get_phy_mode(phy) != 803:
-				QMessageBox.critical(self, "Error", f"Не возможно переключить {iface} в режим мониторинга!")		
-		
-		self.update_list()
 
 class StationsTable(QWidget):
 	def __init__(self, parent=None):
@@ -494,7 +275,7 @@ class MainWindow(QMainWindow):
 		self.btn_targ.setIcon(QIcon('icons/target.png'))
 		self.btn_targ.setIconSize(QSize(24, 24))
 		
-		self.btn_wifi.clicked.connect(self.chose_wifi_adapter_dialog)
+		self.btn_wifi.clicked.connect(self.show_wifiman_dialog)
 		self.btn_scan.clicked.connect(self.scan_networks)
 		self.btn_stop.clicked.connect(self.stop_scan)
 		self.btn_targ.clicked.connect(self.target_select)
@@ -666,12 +447,12 @@ class MainWindow(QMainWindow):
 		
 		self.workTimeLabel.setText(f"{self.workDays}d {self.workHour:02d}:{self.workMin:02d}:{self.workSec:02d}")
 	
-	def chose_wifi_adapter_dialog(self):
-		chose_wifi_dialog = ChoseWiFiAdapderDialog(self)
-		chose_wifi_dialog.exec_()
+	def show_wifiman_dialog(self):
+		wifiman_dialog = wifiman.WiFiManager(self)
+		wifiman_dialog.exec_()
 		
-		if chose_wifi_dialog.result() == QDialog.Accepted:
-			result = chose_wifi_dialog.select_iface()
+		if wifiman_dialog.result() == QDialog.Accepted:
+			result = wifiman_dialog.select_iface()
 			if not result.get('interface') is None:
 				self.interface = result.get('interface', None)
 				self.supported_channels = result.get('supported_channels', None)
@@ -712,9 +493,6 @@ class MainWindow(QMainWindow):
 		else:
 			self.timer.stop()
 			self.timer.deleteLater()
-	
-	def get_hexdump(self, pkt):
-		return hexdump(pkt, dump=True)
 
 	def open_hexdump_window(self, index):
 		item = self.model.itemFromIndex(index)
@@ -725,8 +503,7 @@ class MainWindow(QMainWindow):
 		if network_info:
 			pkt = network_info.get('packet')
 			if pkt:
-				hexdump_data = self.get_hexdump(pkt)
-				hexdump_dialog = HexDumpDialog(hexdump_data, ssid, pkt, self)
+				hexdump_dialog = hexdump.HexDumpDialog(ssid, pkt, self)
 				hexdump_dialog.exec_()
 
 	def stop_scan(self):
