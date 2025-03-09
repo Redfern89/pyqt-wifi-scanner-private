@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from PyQt5.QtWidgets import QDialog, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QApplication
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont, QIcon, QTextCursor
 from PyQt5.QtCore import QSize
 from scapy.utils import wrpcap, hexdump
 
@@ -63,6 +63,8 @@ class HexDumpDialog(QDialog):
 		scroll1 = self.text_editHex.verticalScrollBar()
 		scroll2 = self.text_editAscii.verticalScrollBar()
 		
+		self.text_editAscii.cursorPositionChanged.connect(self.ascii_editor_select)
+		
 		scroll1.valueChanged.connect(
 			scroll2.setValue
 		)
@@ -113,7 +115,11 @@ class HexDumpDialog(QDialog):
 		main_layout.addLayout(textedit_layout)
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		self.setLayout(main_layout)
-
+	
+	def ascii_editor_select(self):
+		cursor = self.text_editAscii.textCursor() 
+		print(cursor.position())
+		
 	def save_pcap(self):
 		options = QFileDialog.Options()
 		file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить как", f"{self.ssid}.pcap", "PCAP Files (*.pcap)", options=options)
