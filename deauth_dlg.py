@@ -468,7 +468,7 @@ class DeauthDialog(QDialog):
 						'client': st_mac,
 						'mac': self.get_mac_vendor_mixed(st_mac),
 						'signal': signal,
-						'frames': 0,
+						'frames': 1,
 						'acks': 0,
 						'rate': f"{station_Rate} mB/s",
 						'modulation': str(station_ChannelFlags),
