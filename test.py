@@ -117,10 +117,15 @@ class HexDumpDialog(QDialog):
 		byte_blocks = [list(self.raw_data[i:i + 16]) for i in range(0, len(self.raw_data), 16)]
 		
 		for line, block in enumerate(byte_blocks):
-			self.hex_text_edit.append(' '.join(f'{b:02x}' for b in block))
-			self.ascii_text_edit.append(''.join(chr(b) if 32 <= b <= 126 else '.' for b in block))
 			self.position_text_edit.append(f'{line:04x}')
-
+			for byte_idx, byte in enumerate(block):
+				#if byte_idx == 8:
+				#	self.hex_text_edit.insertPlainText(' ')
+				self.hex_text_edit.insertPlainText(f'{byte:02x}')
+				self.ascii_text_edit.insertPlainText(chr(byte) if 32 <= byte <= 126 else '.')
+			self.hex_text_edit.insertPlainText("\n")
+			self.ascii_text_edit.insertPlainText("\n")
+	
 	def sync_ascii_hex_cursor_position(self):
 		cursor_ascii = self.ascii_text_edit.textCursor()
 		cursor_hex = self.hex_text_edit.textCursor()
@@ -130,41 +135,10 @@ class HexDumpDialog(QDialog):
 
 		selection_start = cursor_ascii.selectionStart()
 		selection_end = cursor_ascii.selectionEnd()
-
-		def ascii_to_hex_offset(ascii_offset):
-			hex_offset = 0
-			ascii_index = 0
-
-			while ascii_index < ascii_offset and hex_offset < hex_text_length:
-				print(f"hex_offset: {hex_offset}, ascii_index: {ascii_index}, char: '{hex_text[hex_offset]}'")
-
-				# Пропускаем \n, но НЕ увеличиваем ascii_index
-				if hex_text[hex_offset] == '\n':
-					print("New line detected! Skipping without ascii_index increment.")
-					hex_offset += 1
-					continue
-
-				# Двигаемся на два символа HEX
-				hex_offset += 2  
-				ascii_index += 1  
-
-				# Проверяем, есть ли пробел (если не конец строки)
-				if hex_offset < hex_text_length and hex_text[hex_offset] not in ('\n', ' '):
-					continue  
-
-				# Если пробел есть - учитываем его
-				if hex_offset < hex_text_length and hex_text[hex_offset] == ' ':
-					hex_offset += 1  
-
-			return hex_offset
-
-
-		hex_start = ascii_to_hex_offset(selection_start)
-		hex_end = ascii_to_hex_offset(selection_end)
-
-		print(f"ASCII: {selection_start} -> HEX: {hex_start}")
-		print(f"ASCII: {selection_end} -> HEX: {hex_end}")
-
+		
+		hex_start = selection_start * 3
+		hex_end = selection_end * 3
+		
 		cursor_hex.setPosition(hex_start)
 		cursor_hex.setPosition(hex_end, QTextCursor.KeepAnchor)
 
