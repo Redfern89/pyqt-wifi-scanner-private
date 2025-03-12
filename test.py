@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 
-from PyQt5.QtWidgets import QDialog, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QApplication
-from PyQt5.QtGui import QFont, QIcon, QTextCursor, QPalette, QColor
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtWidgets import QDialog, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QApplication, QTableView, QStyledItemDelegate
+from PyQt5.QtGui import QFont, QIcon, QTextCursor, QPalette, QColor, QStandardItemModel, QStandardItem
+from PyQt5.QtCore import Qt, QSize, QModelIndex, QAbstractTableModel, QItemSelection, QItemSelectionModel, QEvent
 from scapy.utils import wrpcap, hexdump
 
 import sys
 import subprocess
+
+class CenterDelegate(QStyledItemDelegate):
+	def paint(self, painter, option, index):
+		if index.column() > 0:
+			option.displayAlignment = Qt.AlignmentFlag.AlignCenter
+			super().paint(painter, option, index)
+		else:
+			super().paint(painter, option, index)
 
 class HexDumpDialog(QDialog):
 	def __init__(self, parent=None):
@@ -41,7 +49,7 @@ class HexDumpDialog(QDialog):
 		# Get screen resolution and position window at center
 		screen_resolution = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
 		screen_width, screen_height = map(int, screen_resolution.split('x'))
-		window_width, window_height = 900, 510
+		window_width, window_height = 1000, 510
 		x_pos = (screen_width // 2) - (window_width // 2)
 		y_pos = (screen_height // 2) - (window_height // 2)
 		self.setGeometry(x_pos, y_pos, window_width, window_height)
@@ -50,164 +58,151 @@ class HexDumpDialog(QDialog):
 		font = QFont("Courier", 14)
 		font.setStyleHint(QFont.TypeWriter)
 
-		# Initialize text areas
-		self.position_text_edit = QTextEdit(self)
-		self.position_text_edit.setReadOnly(True)
-		self.position_text_edit.setFont(font)
-		self.position_text_edit.setFixedWidth(80)
-		palette = self.position_text_edit.palette()
-		palette.setColor(QPalette.Base, QColor("#f2f2f2"))
-		self.position_text_edit.setPalette(palette)
-
-		self.hex_text_edit = QTextEdit(self)
-		self.hex_text_edit.setReadOnly(True)
-		self.hex_text_edit.setFont(font)
-		self.hex_text_edit.setFixedWidth(600)
-
-		self.ascii_text_edit = QTextEdit(self)
-		self.ascii_text_edit.setReadOnly(True)
-		self.ascii_text_edit.setFont(font)
-		self.manual_cursor_update = False
-
-		# Connect scroll bars to synchronize scrolling
-		scroll_pos = self.position_text_edit.verticalScrollBar()
-		scroll_hex = self.hex_text_edit.verticalScrollBar()
-		scroll_ascii = self.ascii_text_edit.verticalScrollBar()
-
-		self.ascii_text_edit.cursorPositionChanged.connect(self.sync_ascii_hex_cursor_position)
-		self.hex_text_edit.cursorPositionChanged.connect(self.sync_hex_ascii_cursor_position)
-		#self.hex_text_edit.selectionChanged.connect(self.sync_hex_ascii_cursor_position)
-
-
-		scroll_pos.valueChanged.connect(scroll_hex.setValue)
-		scroll_pos.valueChanged.connect(scroll_ascii.setValue)
-		scroll_hex.valueChanged.connect(scroll_pos.setValue)
-		scroll_hex.valueChanged.connect(scroll_ascii.setValue)
-		scroll_ascii.valueChanged.connect(scroll_pos.setValue)
-		scroll_ascii.valueChanged.connect(scroll_hex.setValue)
-
-		# Insert raw data into hex, position, and ascii text areas
-		self.insert_raw_data()
-
-		# Create save button
 		self.save_button = QPushButton('Save to pcap file')
 		self.save_button.setIcon(QIcon('icons/diskette.png'))
 		self.save_button.setIconSize(QSize(24, 24))
-		self.save_button.clicked.connect(self.save_pcap)
 
-		# Layout setup
 		top_layout = QHBoxLayout()
 		top_layout.addWidget(self.save_button)
 		top_layout.setContentsMargins(5, 5, 5, 0)
 		top_layout.addStretch()
 
-		textedit_layout = QHBoxLayout()
-		textedit_layout.addWidget(self.position_text_edit)
-		textedit_layout.addWidget(self.hex_text_edit)
-		textedit_layout.addWidget(self.ascii_text_edit)
+		self.hex_table_model = QStandardItemModel()
+		self.hex_table = QTableView()
+		self.hex_table.setModel(self.hex_table_model)
+		self.hex_table.setShowGrid(False)
+		self.hex_table.setEditTriggers(QTableView.NoEditTriggers)
+		self.hex_table.verticalHeader().setVisible(False)
+		self.hex_table.horizontalHeader().setVisible(False)
+		self.hex_table.setItemDelegate(CenterDelegate(self.hex_table))
+		self.hex_table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
+		self.hex_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectItems)  # Выделяем отдельные ячейки
+		self.hex_table.selectionModel().selectionChanged.connect(self.hex_table_selection_sync)
+		self.hex_table.installEventFilter(self)
+		self.hex_table.setFont(font)
 
-		main_layout = QVBoxLayout()
+		self.ascii_table_model = QStandardItemModel()
+		self.ascii_table = QTableView()
+		self.ascii_table.setModel(self.ascii_table_model)
+		self.ascii_table.setShowGrid(False)
+		self.ascii_table.setEditTriggers(QTableView.NoEditTriggers)
+		self.ascii_table.verticalHeader().setVisible(False)
+		self.ascii_table.horizontalHeader().setVisible(False)
+		self.ascii_table.setItemDelegate(CenterDelegate(self.hex_table))
+		self.ascii_table.setFont(font)
+		self.ascii_table.setFixedWidth(260)
+
+		textedit_layout = QHBoxLayout()
+		textedit_layout.addWidget(self.hex_table)
+		textedit_layout.addWidget(self.ascii_table)
+
+		main_layout = QVBoxLayout()	
 		main_layout.addLayout(top_layout)
 		main_layout.addLayout(textedit_layout)
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		self.setLayout(main_layout)
 
+		self.insert_raw_data()
+
+		for col in range(self.ascii_table.model().columnCount()):
+			self.ascii_table.setColumnWidth(col, 10)
+
+		for col in range(self.hex_table.model().columnCount()):
+			if col == 0:
+				self.hex_table.setColumnWidth(0, 60)
+			else:
+				self.hex_table.setColumnWidth(col, 35)
+			#self.hex_table.setFixedWidth(10)
+
+	def hex_table_selection_sync(self, selected: QItemSelection, deselected: QItemSelection):
+		hex_selection_model = self.hex_table.selectionModel()
+		ascii_selection_model = self.ascii_table.selectionModel()
+
+		# Получаем индексы выделенных ячеек
+		hex_indexes = hex_selection_model.selectedIndexes()
+
+		for idx in hex_indexes:
+			if idx.column() == 0:  # Если это 0-я колонка
+				# Снимаем выделение с этой ячейки
+				hex_selection_model.select(idx, QItemSelectionModel.Deselect)
+				ascii_selection_model.select(idx, QItemSelectionModel.Deselect)
+		# Создаём новое выделение для ASCII-таблицы
+		ascii_selection = QItemSelection()
+
+		for idx in hex_indexes:
+			ascii_index = self.ascii_table.model().index(idx.row(), idx.column() -1)
+			ascii_selection.merge(QItemSelection(ascii_index, ascii_index), QItemSelectionModel.Select)
+
+		# Отключаем сигналы, чтобы не зациклить обновления
+		try:
+			ascii_selection_model.selectionChanged.disconnect(self.hex_table_selection_sync)
+		except TypeError:
+			pass  # Если сигнал не был подключён, то просто пропускаем
+
+		# Применяем выделение в ASCII-таблице
+		ascii_selection_model.clearSelection()
+		ascii_selection_model.select(ascii_selection, QItemSelectionModel.Select)
+
+		# Включаем сигналы обратно
+		#ascii_selection_model.selectionChanged.connect(self.hex_table_selection_sync)
+
+	def highlight_items(self, offset, count):
+		for row in range(self.hex_table_model.rowCount()):
+			for col in range(self.hex_table_model.columnCount()):
+				index = self.hex_table_model.index(row, col)
+				item = self.hex_table_model.itemFromIndex(index)
+				cell_index = item.data(Qt.UserRole)
+				if cell_index:
+					print(cell_index)
+					if offset <= cell_index < offset + count:
+						#print(cell_index)
+						item.setBackground(QColor("yellow"))
+			
+
 	def insert_raw_data(self):
 		# Fill hex, position and ascii text areas with raw data
+		rt_len = self.raw_data[2]
 		byte_blocks = [list(self.raw_data[i:i + 16]) for i in range(0, len(self.raw_data), 16)]
 		
+		idx = 0
 		for line, block in enumerate(byte_blocks):
-			self.position_text_edit.append(f'{line:04x}')
+			hex_items = []
+			ascii_items = []
+			pos_item = QStandardItem(f'{line:04X}')
+			hex_items.append(pos_item)
+			pos_item.setBackground(QColor('#f0f0f0'))
 			for byte_idx, byte in enumerate(block):
-				#if byte_idx == 8:
-				#	self.hex_text_edit.insertPlainText(' ')
-				self.hex_text_edit.insertPlainText(f'{byte:02x}')
-				self.ascii_text_edit.insertPlainText(chr(byte) if 32 <= byte <= 126 else '.')
-			self.hex_text_edit.insertPlainText("\n")
-			self.ascii_text_edit.insertPlainText("\n")
-	
-	def sync_ascii_hex_cursor_position(self):
-		cursor_ascii = self.ascii_text_edit.textCursor()
-		cursor_hex = self.hex_text_edit.textCursor()
+				if line % 2 == 0:
+					bg = QColor('#f5fbff')
+				else:
+					bg = QColor('#ffffff')
 
-		hex_text = self.hex_text_edit.toPlainText()
-		hex_text_length = len(hex_text)
+				if byte == 0x00:
+					fg = QColor('#8c8c8c')
+				else:
+					fg = QColor('#000000')
+				hex_item = QStandardItem(f'{byte:02X}')
+				hex_item.setBackground(bg)
+				hex_item.setForeground(fg)
+				hex_item.setData(int(idx), Qt.UserRole)			
 
-		selection_start = cursor_ascii.selectionStart()
-		selection_end = cursor_ascii.selectionEnd()
-		
-		hex_start = selection_start * 3
-		hex_end = selection_end * 3
-		
-		cursor_hex.setPosition(hex_start)
-		cursor_hex.setPosition(hex_end, QTextCursor.KeepAnchor)
+				hex_items.append(hex_item)
 
-		self.hex_text_edit.setTextCursor(cursor_hex)
-		self.hex_text_edit.ensureCursorVisible()
-   
+				if byte >= 26 and byte <= 126:
+					char = chr(byte)
+				else:
+					char = '.'
+				ascii_item = QStandardItem(char)
+				ascii_item.setForeground(fg)
+				ascii_items.append(ascii_item)
+				idx += 1
 
-	def sync_hex_ascii_cursor_position(self):
-		if QApplication.focusWidget() is self.hex_text_edit:
-			cursor_hex = self.hex_text_edit.textCursor()
-			text = self.hex_text_edit.toPlainText()
+			self.hex_table_model.appendRow(hex_items)
+			self.ascii_table_model.appendRow(ascii_items)
 
-			# Если есть выделение
-			
-			if cursor_hex.hasSelection():
-				selection_start = cursor_hex.selectionStart()
-				selection_end = cursor_hex.selectionEnd()
+			#idx += 1
 
-				# Корректируем на границы байтов
-				if selection_start % 3 != 0:
-					selection_start -= selection_start % 3  # Начало байта
-				if selection_end % 3 != 2:
-					selection_end += 2 - selection_end % 3  # Конец байта
-
-				# Ограничиваем выделение внутри текста
-				selection_start = max(0, selection_start)
-				selection_end = min(len(text), selection_end)
-
-				# Явная проверка направления выделения
-				if selection_start < selection_end:
-					# Позиции инвертированы (снизу вверх), мы меняем их местами
-					selection_start, selection_end = selection_end, selection_start
-
-				# Устанавливаем новый курсор с выделением
-				cursor_hex.setPosition(selection_start)
-				cursor_hex.setPosition(selection_end, QTextCursor.KeepAnchor)
-				self.hex_text_edit.setTextCursor(cursor_hex)
-
-		# Если нет выделения, выделяем один байт
-		#else:
-		
-		'''
-		pos = cursor_hex.position()
-		sel = pos % 3
-
-		if sel == 0:
-			start_sel, end_sel = pos, pos + 2  # Начало и конец байта
-		elif sel == 1:
-			start_sel, end_sel = pos - 1, pos + 1  # Выделяем целый байт
-		else:
-			start_sel, end_sel = pos - 2, pos  # Выделяем целый байт
-
-		# Ограничиваем start и end, чтобы не выйти за пределы текста
-		start_sel = max(0, start_sel)
-		end_sel = min(len(text), end_sel)
-
-		# Устанавливаем новый курсор с выделением
-		cursor_hex.setPosition(start_sel)
-		cursor_hex.setPosition(end_sel, QTextCursor.KeepAnchor)
-		self.hex_text_edit.setTextCursor(cursor_hex)
-		pass
-		'''
-
-
-
-
-	def save_pcap(self):
-		options = QFileDialog.Options()
-		file_path, _ = QFileDialog.getSaveFileName(self, "Save as", "output.pcap", "PCAP Files (*.pcap)", options=options)
+			self.highlight_items(0, 4)
 
 
 if __name__ == '__main__':
