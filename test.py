@@ -19,7 +19,7 @@ class CenterDelegate(QStyledItemDelegate):
 class HexDumpDialog(QDialog):
 	def __init__(self, parent=None):
 		super().__init__(parent)
-		self.raw_data = (
+		self.raw_data = \
 		b"\x00\x00\x12\x00\x2e\x48\x00\x00\x00\x02\x99\x09\xa0\x00\xaf\x01" \
 		b"\x00\x00\x80\x00\x00\x00\xff\xff\xff\xff\xff\xff\x40\xed\x00\x62" \
 		b"\x31\x74\x40\xed\x00\x62\x31\x74\x10\xa0\xc1\xf2\x99\x80\xbd\x0a" \
@@ -44,7 +44,7 @@ class HexDumpDialog(QDialog):
 		b"\x43\x09\x00\x00\x00\xdd\x21\x00\x0c\xe7\x08\x00\x00\x00\xbf\x0c" \
 		b"\xb1\x01\xc0\x33\x2a\xff\x92\x04\x2a\xff\x92\x04\xc0\x05\x00\x00" \
 		b"\x00\x2a\xff\xc3\x03\x01\x02\x02"
-		)
+		
 		
 		self.init_ui()
 		self.insert_raw_data()
@@ -65,9 +65,10 @@ class HexDumpDialog(QDialog):
 		self.ascii_table.selectionModel().selectionChanged.connect(self.sync_selection_ascii_hex)
 		
 		self.hex_table.horizontalHeader().setVisible(True)
-		
+		self.hex_table.verticalHeader().setVisible(True)
+
 		header_items = []
-		header_items.append('H')
+		#header_items.append('H')
 		for i in range(16):
 			header_items.append(f'{i:02X}')
 		
@@ -111,13 +112,13 @@ class HexDumpDialog(QDialog):
 
 	def insert_raw_data(self):
 		byte_blocks = [self.raw_data[i:i + 16] for i in range(0, len(self.raw_data), 16)]
+		pos_items = []
 
 		for line, block in enumerate(byte_blocks):
 			bg_color = QColor('#f5fbff') if line % 2 == 0 else QColor('#ffffff')
 
-			pos_item = QStandardItem(f'{line:04X}')
-			pos_item.setBackground(QColor('#f0f0f0'))
-			hex_items = [pos_item]
+			pos_items.append(f'{line:04X}')
+			hex_items = []
 			ascii_items = []
 
 			for idx, byte in enumerate(block):
@@ -130,6 +131,7 @@ class HexDumpDialog(QDialog):
 				ascii_items.append(QStandardItem(chr(byte) if 32 <= byte <= 126 else '.'))
 
 			self.hex_table_model.appendRow(hex_items)
+			self.hex_table_model.setVerticalHeaderLabels(pos_items)
 			self.ascii_table_model.appendRow(ascii_items)
 
 		self.adjust_column_widths()
@@ -138,7 +140,7 @@ class HexDumpDialog(QDialog):
 		for col in range(self.ascii_table_model.columnCount()):
 			self.ascii_table.setColumnWidth(col, 10)
 		for col in range(self.hex_table_model.columnCount()):
-			self.hex_table.setColumnWidth(col, 60 if col == 0 else 35)
+			self.hex_table.setColumnWidth(col, 35)
 			
 
 	def highlight_items(self, offset, count):
@@ -147,7 +149,7 @@ class HexDumpDialog(QDialog):
 				hex_index = self.hex_table_model.index(row, col)
 				hex_item = self.hex_table_model.itemFromIndex(hex_index)
 				
-				ascii_index = self.ascii_table_model.index(row, col -1)
+				ascii_index = self.ascii_table_model.index(row, col)
 				ascii_item = self.ascii_table_model.itemFromIndex(ascii_index)
 				
 				cell_index = hex_item.data(Qt.UserRole)
@@ -165,10 +167,7 @@ class HexDumpDialog(QDialog):
 		ascii_selection_model = self.ascii_table.selectionModel()
 		ascii_selection_model.clearSelection()
 		for idx in hex_selection_model.selectedIndexes():
-			if idx.column() == 0:
-				hex_selection_model.select(idx, QItemSelectionModel.Deselect)
-				continue
-			ascii_index = self.ascii_table_model.index(idx.row(), idx.column() - 1)
+			ascii_index = self.ascii_table_model.index(idx.row(), idx.column())
 			ascii_selection_model.select(ascii_index, QItemSelectionModel.Select)
 			
 	def sync_selection_ascii_hex(self, selected, _):
@@ -178,7 +177,7 @@ class HexDumpDialog(QDialog):
 		ascii_selection_model = self.ascii_table.selectionModel()
 		hex_selection_model.clearSelection()
 		for idx in ascii_selection_model.selectedIndexes():
-			hex_index = self.hex_table_model.index(idx.row(), idx.column() + 1)
+			hex_index = self.hex_table_model.index(idx.row(), idx.column())
 			hex_selection_model.select(hex_index, QItemSelectionModel.Select)
 			
 	def sync_scrolls(self):

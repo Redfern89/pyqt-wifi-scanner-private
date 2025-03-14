@@ -2,7 +2,6 @@
 
 import sys
 import subprocess
-import time
 
 from PyQt5.QtWidgets import (
 	QDialog, QTableView, QVBoxLayout, QHBoxLayout, QPushButton, 
@@ -10,8 +9,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
 from PyQt5.QtCore import Qt, QSize, QItemSelection
-
-import misc
+from misc import WiFiPhyManager
 
 class WiFiManager(QDialog):
 	def __init__(self, parent=None):
@@ -19,19 +17,13 @@ class WiFiManager(QDialog):
 		self.setWindowTitle("Выбор Wifi адаптера")
 		self.setWindowIcon(QIcon('icons/ethernet.png'))
 
-		self.wifi = misc.WiFiPhyManager()
+		self.wifi = WiFiPhyManager()
 		self.devices = self.wifi.handle_lost_phys()
-		
-		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
-		wh = xrandr_wxh.split('x')
-		w = 1120
-		h = 520
-		x = round((int(wh[0]) / 2) - (w / 2))
-		y = round((int(wh[1]) / 2) - (h / 2))
-		self.setGeometry(x, y, w, h)
-		
+
+		self.setGeometry(*self._center_window(1120, 520))
+
 		self.table = QTableView(self)
-		self.model = QStandardItemModel(0, 5, self)
+		self.model = QStandardItemModel(0, 7, self)
 		self.model.setHorizontalHeaderLabels(['PHY', 'Interface', 'MAC', 'Driver', 'Chipset', 'State', 'Mode'])
 
 		self.table.setModel(self.model)
@@ -39,155 +31,149 @@ class WiFiManager(QDialog):
 		self.table.setEditTriggers(QTableView.NoEditTriggers)
 		self.table.setShowGrid(False)
 		self.table.verticalHeader().setVisible(False)
-		self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+		self.table.setSelectionBehavior(QTableView.SelectRows)
 		self.table.setIconSize(QSize(32, 32))
 		self.table.selectionModel().selectionChanged.connect(self.on_selection_changed)
 		self.table.doubleClicked.connect(self.select_iface)
 
-		self.table.setColumnWidth(0, 90)
-		self.table.setColumnWidth(1, 150)
-		self.table.setColumnWidth(2, 150)
-		self.table.setColumnWidth(4, 350)
+		# Настройки ширины колонок
+		col_widths = [90, 150, 150, None, 350, None, None]
+		for i, width in enumerate(col_widths):
+			if width:
+				self.table.setColumnWidth(i, width)
 
-		self.btn_refresh = QPushButton('Обновить')
-		self.btn_updown = QPushButton('Поднять')
-		self.btn_mode = QPushButton('Режим мониторинга')
-		
-		self.btn_refresh.setIcon(QIcon('icons/refresh.png'))
-		self.btn_updown.setIcon(QIcon('icons/upward-arrow.png'))
-		self.btn_mode.setIcon(QIcon('icons/connections.png'))
-		
-		self.btn_refresh.setIconSize(QSize(24, 24))
-		self.btn_updown.setIconSize(QSize(24, 24))
-		self.btn_mode.setIconSize(QSize(24, 24))
-		
-		self.btn_updown.setEnabled(False)
-		self.btn_mode.setEnabled(False)
-		
-		self.btn_mode.clicked.connect(self.switch_iface_mode)
-		self.btn_refresh.clicked.connect(self.update_list)
-		self.btn_updown.clicked.connect(self.updown_iface)
-		
+		# Кнопки
+		self.btn_refresh = self._create_button("Обновить", "icons/refresh.png", self.update_list)
+		self.btn_updown = self._create_button("Поднять", "icons/upward-arrow.png", self.updown_iface, False)
+		self.btn_mode = self._create_button("Режим мониторинга", "icons/connections.png", self.switch_iface_mode, False)
+
+		# Размещение кнопок
 		top_layout = QHBoxLayout()
 		top_layout.addWidget(self.btn_refresh)
 		top_layout.addWidget(self.btn_updown)
 		top_layout.addWidget(self.btn_mode)
-		top_layout.setContentsMargins(5, 5, 5, 0)
 		top_layout.addStretch()
 
+		# Основной layout
 		main_layout = QVBoxLayout()
 		main_layout.addLayout(top_layout)
 		main_layout.addWidget(self.table)
-		main_layout.setContentsMargins(0, 0, 0, 0)
 		self.setLayout(main_layout)
-		
-		self.update_list()
-	
-	def select_iface(self):
-		result = {}
-		selected = self.table.selectionModel().currentIndex()
-		model = self.table.model()
-		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
-		iface = self.table.model().data(self.table.model().index(selected.row(), 1))
 
-		if self.wifi.iface_exists(iface) == False:
-			QMessageBox.critical(self, "Error", f"Интерфейса {interface} не существует!")
+		self.update_list()
+
+	def _center_window(self, w, h):
+		""" Возвращает координаты для центрирования окна. """
+		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode().strip()
+		screen_w, screen_h = map(int, xrandr_wxh.split('x'))
+		return round((screen_w - w) / 2), round((screen_h - h) / 2), w, h
+
+	def _create_button(self, text, icon, callback, enabled=True):
+		""" Универсальная функция для создания кнопки. """
+		btn = QPushButton(text)
+		btn.setIcon(QIcon(icon))
+		btn.setIconSize(QSize(24, 24))
+		btn.setEnabled(enabled)
+		btn.clicked.connect(callback)
+		return btn
+
+	def _get_selected_row(self):
+		""" Возвращает индекс выбранной строки или None. """
+		indexes = self.table.selectionModel().selectedIndexes()
+		return indexes[0].row() if indexes else None
+
+	def _get_value(self, row, column, role=Qt.DisplayRole):
+		""" Универсальный метод получения данных из таблицы. """
+		return self.model.data(self.model.index(row, column), role)
+
+	def select_iface(self):
+		""" Выбор интерфейса по двойному клику. """
+		row = self._get_selected_row()
+		if row is None:
+			return
+
+		phy = self._get_value(row, 0).lower()
+		iface = self._get_value(row, 1)
+
+		if not self.wifi.iface_exists(iface):
+			QMessageBox.critical(self, "Ошибка", f"Интерфейса {iface} не существует!")
 			self.update_list()
 			return
-		
-		result = {
-			'interface': iface,
-			'supported_channels': self.wifi.get_phy_supported_channels(phy)
-		}
+
 		self.accept()
+		return {"interface": iface, "supported_channels": self.wifi.get_phy_supported_channels(phy)}
 
-		return result
-		
 	def on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
-		indexes = selected.indexes()
-		
-		if indexes:
-			row = indexes[0].row()
-			self.btn_updown.setEnabled(True)
-			self.btn_mode.setEnabled(True)
-			
-			model = self.model
-			state = model.itemFromIndex(model.index(row, 5)).data(Qt.UserRole)
-			mode = model.itemFromIndex(model.index(row, 6)).data(Qt.UserRole +1)
+		""" Обновление состояния кнопок при выборе адаптера. """
+		row = self._get_selected_row()
+		enabled = row is not None
+		self.btn_updown.setEnabled(enabled)
+		self.btn_mode.setEnabled(enabled)
 
-			if mode == 803:
-				self.btn_mode.setText('В режим станции')
-				self.btn_mode.setIcon(QIcon('icons/global-network.png'))
-			else:
-				self.btn_mode.setText('В режим мониторинга')
-				self.btn_mode.setIcon(QIcon('icons/connections.png'))
+		if not enabled:
+			return
 
-			if state == True:
-				self.btn_updown.setText('Отключить')
-				self.btn_updown.setIcon(QIcon('icons/down-arrow.png'))
-			else:
-				self.btn_updown.setText('Поднять')
-				self.btn_updown.setIcon(QIcon('icons/upward-arrow.png'))
-		else:
-			self.btn_updown.setEnabled(False)
-			self.btn_mode.setEnabled(False)
-		
+		# Обновляем кнопки в зависимости от состояния
+		state = self._get_value(row, 5, Qt.UserRole)
+		mode = self._get_value(row, 6, Qt.UserRole + 1)
+
+		print(mode)
+
+		self.btn_mode.setText('В режим станции' if mode == 803 else 'В режим мониторинга')
+		self.btn_mode.setIcon(QIcon('icons/global-network.png' if mode == 803 else 'icons/connections.png'))
+
+		self.btn_updown.setText('Отключить' if state else 'Поднять')
+		self.btn_updown.setIcon(QIcon('icons/down-arrow.png' if state else 'icons/upward-arrow.png'))
+
 	def update_list(self):
+		""" Обновление списка Wi-Fi адаптеров. """
 		self.devices = self.wifi.handle_lost_phys()
 		self.model.setRowCount(0)
 
-		for key, val in self.devices.items():
+		for val in self.devices.values():
 			items = []
-			for k, v in val.items():
-				if k != 'channels':
-					if k == 'phydev':
-						item = QStandardItem(QIcon('icons/ethernet.png'), v)
-					elif k == 'state':
-						item = QStandardItem(self.wifi.iface_states.get(v, '-'))
-						item.setData(v, Qt.UserRole)
-					elif k == 'mode':
-						item = QStandardItem(self.wifi.iface_types.get(v, '-'))
-						item.setData(v, Qt.UserRole +1)
-					else:
-						item = QStandardItem(str(v))
-					items.append(item)
+			for key, v in val.items():
+				if key == 'channels':
+					continue
+				item = QStandardItem(QIcon('icons/ethernet.png'), v) if key == 'phydev' else QStandardItem(str(v))
+				if key == 'state':
+					item = QStandardItem('UP' if v else 'DOWN')
+					item.setData(v, Qt.UserRole)
+				if key == 'mode':
+					item = QStandardItem(self.wifi.iface_types.get(v, 'Unknown'))
+					item.setData(v, Qt.UserRole +1)
+				items.append(item)
+
 			self.model.appendRow(items)
-			row_number = self.model.rowCount() -1
-			self.table.setRowHeight(row_number, 40)
-	
+			self.table.setRowHeight(self.model.rowCount() - 1, 40)
+
 	def updown_iface(self):
-		selected = self.table.selectionModel().currentIndex()
-		model = self.table.model()
-		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
-		iface = self.table.model().data(self.table.model().index(selected.row(), 1)).lower()
-		state = self.table.model().data(self.table.model().index(selected.row(), 5), Qt.UserRole)
-		
-		if state == True:
-			self.wifi.set_phy_link(phy, 'down')
-			time.sleep(1)
-			if self.wifi.get_phy_state(phy) != False:
-				QMessageBox.critical(self, "Error", f"Не возможно отключить {iface}!")
-		else:
-			self.wifi.set_phy_link(phy, 'up')
-			time.sleep(1)
-			if self.wifi.get_phy_state(phy) != True:
-				QMessageBox.critical(self, "Error", f"Не возможно включить {iface}!")
-			
+		""" Включение/выключение Wi-Fi адаптера. """
+		row = self._get_selected_row()
+		if row is None:
+			return
+
+		phy = self._get_value(row, 0).lower()
+		iface = self._get_value(row, 1).lower()
+		state = self._get_value(row, 5, Qt.UserRole)
+
+		self.wifi.set_phy_link(phy, 'down' if state else 'up')
 		self.update_list()
-	
+
 	def switch_iface_mode(self):
-		selected = self.table.selectionModel().currentIndex()
-		phy = self.table.model().data(self.table.model().index(selected.row(), 0)).lower()
-		iface = self.table.model().data(self.table.model().index(selected.row(), 1)).lower()
-		mode = self.table.model().data(self.table.model().index(selected.row(), 6), Qt.UserRole +1)
-		
-		if mode == 803:
-			self.wifi.set_phy_80211_station(phy)
-			if self.wifi.get_phy_mode(phy) != 1:
-				QMessageBox.critical(self, "Error", f"Не возможно переключить {iface} в режим станции!")
-		else:
-			self.wifi.set_phy_80211_monitor(phy)
-			if self.wifi.get_phy_mode(phy) != 803:
-				QMessageBox.critical(self, "Error", f"Не возможно переключить {iface} в режим мониторинга!")		
-		
+		""" Переключение режима адаптера. """
+		row = self._get_selected_row()
+		if row is None:
+			return
+
+		phy = self._get_value(row, 0).lower()
+		iface = self._get_value(row, 1).lower()
+		mode = self._get_value(row, 6, Qt.UserRole + 1)
+
+		set_mode = self.wifi.set_phy_80211_station if mode == 803 else self.wifi.set_phy_80211_monitor
+		set_mode(phy)
+
+		if self.wifi.get_phy_mode(phy) != (1 if mode == 803 else 803):
+			QMessageBox.critical(self, "Ошибка", f"Не возможно переключить {iface}!")
+
 		self.update_list()

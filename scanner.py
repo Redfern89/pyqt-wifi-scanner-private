@@ -566,13 +566,13 @@ class MainWindow(QMainWindow):
 		while not self.stop_hopping.is_set():  
 			if self.stop_hopping.is_set():
 				break
-			ch = random.choice(self.supported_channels)
-			self.wifi.switch_iface_channel(self.interface, ch)
+			#ch = random.choice(self.supported_channels)
+			#self.wifi.switch_iface_channel(self.interface, ch)
 			
-			#for ch in self.supported_channels:
-			self.wifi.switch_iface_channel(self.interface, ch)
-			self.safe_chlabel_set_ch(str(ch))
-			time.sleep(0.2)
+			for ch in self.supported_channels:
+				self.wifi.switch_iface_channel(self.interface, ch)
+				self.safe_chlabel_set_ch(str(ch))
+				time.sleep(1)
 
 	def sniff_packets(self):
 		sniff(iface=self.interface, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))

