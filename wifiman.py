@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 	QMessageBox
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
-from PyQt5.QtCore import Qt, QSize, QItemSelection
+from PyQt5.QtCore import Qt, QSize, QItemSelection, QTimer
 from misc import WiFiPhyManager
 
 class WiFiManager(QDialog):
@@ -59,8 +59,24 @@ class WiFiManager(QDialog):
 		main_layout.addLayout(top_layout)
 		main_layout.addWidget(self.table)
 		self.setLayout(main_layout)
+		
+		self.phy_devices = self.wifi.handle_lost_phys()
+
+		self.compare_timer = QTimer()
+		self.compare_timer.setInterval(1000)
+		self.compare_timer.timeout.connect(self.compare_phys)
+		self.compare_timer.start()
 
 		self.update_list()
+
+	def compare_phys(self):
+		current = self.wifi.handle_lost_phys()
+		removed = set(self.phy_devices) - set(current)
+		added = set(current) - set(self.phy_devices)
+		
+		if added or removed:
+			self.phy_devices = current
+			self.update_list()
 
 	def _center_window(self, w, h):
 		""" Возвращает координаты для центрирования окна. """
@@ -116,8 +132,6 @@ class WiFiManager(QDialog):
 		# Обновляем кнопки в зависимости от состояния
 		state = self._get_value(row, 5, Qt.UserRole)
 		mode = self._get_value(row, 6, Qt.UserRole + 1)
-
-		print(mode)
 
 		self.btn_mode.setText('В режим станции' if mode == 803 else 'В режим мониторинга')
 		self.btn_mode.setIcon(QIcon('icons/global-network.png' if mode == 803 else 'icons/connections.png'))

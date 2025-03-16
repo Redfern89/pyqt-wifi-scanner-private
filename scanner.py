@@ -22,11 +22,12 @@ import contextlib
 import pcapy
 
 from scapy.all import *
+from target import DeauthDialog
 
 import checker
 import hexdump
 import wifiman
-import deauth_dlg
+#import deauth_dlg
 import misc
 
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
@@ -398,7 +399,7 @@ class MainWindow(QMainWindow):
 				bssid = model.data(model.index(row, 1), Qt.UserRole)
 				channel = model.data(model.index(row, 2))
 				if bssid:
-					targetWindow = deauth_dlg.DeauthDialog(self.interface, bssid, channel, self)
+					targetWindow = DeauthDialog(self.interface, bssid, channel, self)
 					targetWindow.exec_()
 			else:
 				QMessageBox.critical(self, "Error", "Интерфейс не выбран!")
@@ -563,16 +564,19 @@ class MainWindow(QMainWindow):
 		self.statusLabel.setText(f"Interface: {self.interface}, CH: {ch}")
 	
 	def channel_hopper(self):
-		while not self.stop_hopping.is_set():  
+		while not self.stop_hopping.is_set() or not self.interrupt_flag:  
 			if self.stop_hopping.is_set():
 				break
-			#ch = random.choice(self.supported_channels)
-			#self.wifi.switch_iface_channel(self.interface, ch)
-			
-			for ch in self.supported_channels:
-				self.wifi.switch_iface_channel(self.interface, ch)
-				self.safe_chlabel_set_ch(str(ch))
-				time.sleep(1)
+			if self.interrupt_flag:
+				break
+			ch = random.choice(self.supported_channels)
+			self.wifi.switch_iface_channel(self.interface, ch)
+			self.safe_chlabel_set_ch(str(ch))
+			time.sleep(0.3)
+			#for ch in self.supported_channels:
+			#	self.wifi.switch_iface_channel(self.interface, ch)
+			#	self.safe_chlabel_set_ch(str(ch))
+			#	time.sleep(1)
 
 	def sniff_packets(self):
 		sniff(iface=self.interface, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))

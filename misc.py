@@ -3,6 +3,7 @@
 import os
 import subprocess
 import re
+import csv
 import time
 import pcapy
 
@@ -331,7 +332,6 @@ class WiFiPhyManager:
 			self.set_phy_link(phy, 'down')
 			time.sleep(1)
 			if self.get_phy_state(phy) == False:
-				print(f"{phy} {iface} is down state")
 				iface_index = 0
 				mon_iface = f"radio{iface_index}mon"
 
@@ -371,7 +371,7 @@ class WiFiPhyManager:
 		return 'Unknown'
 
 	def switch_iface_channel(self, interface, ch):
-		subprocess.run(["iwconfig", interface, "channel", str(ch)], capture_output=True, text=True)
+		result = subprocess.run(["iwconfig", interface, "channel", str(ch)], capture_output=True, text=True)
 
 	def get_phy_supported_channels(self, phydev):
 		channels = []
@@ -383,6 +383,37 @@ class WiFiPhyManager:
 				if not 'No IR' in channel_data:
 					channels.append(match.group(2))
 		return channels
+	
+class VendorOUI:
+	def __init__(self):
+		self.ouiDB = {}
+		self.ouiCSV_Data = None
+		self.load_oui_csv()
+
+	def load_oui_csv(self):
+		with open('data/oui.csv', newline='', encoding='utf-8') as csvfile:
+			reader = csv.reader(csvfile)
+			for row in reader:
+				if len(row) >= 3:
+					oui = row[1].upper()
+					vendor = row[2].strip()
+					self.ouiDB[oui] = vendor
+
+	def get_mac_vendor(self, mac):
+		mac_prefix = mac.upper().replace(":", "").replace("-", "").replace(".", "")[:6]
+		return self.ouiDB.get(mac_prefix, "Unknown")
+	
+	def get_mac_vendor_mixed(self, mac):
+		if mac:
+			vendor = self.get_mac_vendor(mac)
+			if vendor != 'Unknown':
+				vendor_cleaned = re.sub(r'[ ,.""]', '', vendor)
+				return f"{vendor_cleaned[:8]}_{mac[9:].upper()}"
+			else:
+				return mac.upper()
+		else:
+			return
+
 
 class WiFiInject:
 	def __init__(self, interface, bssid=None, client=None):
