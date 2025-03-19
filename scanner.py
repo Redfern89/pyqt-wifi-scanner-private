@@ -53,7 +53,7 @@ class SSIDColorDelegate(QStyledItemDelegate):
 			line_height = font_metrics.height()
 
 			if icon:
-				icon_rect = QRect(option.rect.x(), option.rect.y(), icon_size, icon_size)
+				icon_rect = QRect(option.rect.x()+2, option.rect.y() +2, icon_size, icon_size)
 				icon.paint(painter, icon_rect, Qt.AlignVCenter)
 
 			painter.setFont(font_bold)

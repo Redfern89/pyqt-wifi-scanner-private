@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox, QDoubleSpinBox, QCheckBox, QLayout
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont, QKeyEvent
-from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot
+from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot, QRect
 
 import sys
 import csv
@@ -23,11 +23,57 @@ from misc import WiFiInject, WiFiPhyManager, WiFi_Parser, VendorOUI
 def scale_rssi(rssi_value, min_rssi=-90, max_rssi=-40, new_min=0, new_max=100):
     return max(new_min, min(new_max, (rssi_value - min_rssi) * (new_max - new_min) / (max_rssi - min_rssi) + new_min))
 
-class MonoFontDeligate(QStyledItemDelegate):
+class StylesDeligate(QStyledItemDelegate):
+	def __init__(self, parent=None, main_class=None):
+		super().__init__(parent)
+		self.main_class = main_class
+
 	def initStyleOption(self, option, index):
 		super().initStyleOption(option, index)
 		if index.column() == 0:
 			option.font = QFont("Courier New", 10)
+
+
+	def paint(self, painter, option, index):
+		model = index.model()
+		mac = index.data(Qt.UserRole)
+		
+		flags = self.main_class.stations[mac]['flags']
+		all_need_flags = all(M in flags for M in ['M1', 'M2', 'M3', 'M4'])
+
+		if index.column() == 0 and all_need_flags:
+			text = index.data(Qt.DisplayRole)
+			painter.save()
+
+			icon = index.data(Qt.DecorationRole)
+			icon_size = option.decorationSize.width() if icon else 0
+			padding = 5
+			text_x = option.rect.x() + icon_size + (padding if icon else 0)
+			text_y = option.rect.y() + 2
+			font_bold = QFont()
+
+			font_metrics = painter.fontMetrics()
+			line_height = font_metrics.height()
+
+			if icon:
+				icon_rect = QRect(option.rect.x() +3, option.rect.y() +3, icon_size, icon_size)
+				icon.paint(painter, icon_rect, Qt.AlignVCenter)
+			
+			font = QFont()
+			font.setBold(True)
+			font.setUnderline(True)
+			painter.setFont(font)
+			painter.setPen(QColor('#ff0000'))
+			painter.drawText(text_x, text_y-1, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, text)
+			font.setUnderline(False)
+			font.setBold(False)
+			painter.setFont(font)
+			painter.setPen(QColor(Qt.gray))
+			painter.drawText(text_x, text_y + line_height, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, "EAPOL")
+
+			painter.restore()
+		else:
+			super().paint(painter, option, index)
 
 class ProgressBarDelegate(QStyledItemDelegate):
 	def __init__(self, parent=None):
@@ -200,7 +246,7 @@ class DeauthDialog(QDialog):
 		self.stations_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
 		self.stations_table.setIconSize(QSize(32, 32))
 		self.stations_table.setItemDelegateForColumn(1, ProgressBarDelegate(self.stations_table))
-		self.stations_table.setItemDelegateForColumn(0, MonoFontDeligate(self.stations_table))
+		self.stations_table.setItemDelegateForColumn(0, StylesDeligate(self.stations_table, self))
 
 		# --- Рзамеры колонок в таблице ---
 		self.stations_table.setColumnWidth(0, 200)
@@ -368,6 +414,8 @@ class DeauthDialog(QDialog):
 			row.append(QStandardItem(str(st_dict.get('flags_str', '-'))))
 
 		self.stations_table_model.appendRow(row)
+		model = self.stations_table_model
+		model.dataChanged.emit(model.index(0, 0), model.index(model.rowCount() - 1, model.columnCount() - 1))
 		row_number = self.stations_table_model.rowCount() -1
 		if row_number >= 0:
 			self.stations_table.setRowHeight(row_number, 40)
@@ -376,13 +424,17 @@ class DeauthDialog(QDialog):
 		QMetaObject.invokeMethod(self, "_update_item_by_mac", Qt.QueuedConnection, Q_ARG(str, mac), Q_ARG(int, item), Q_ARG(str, data))
 
 	@pyqtSlot(str, int, str)
-	def _update_item_by_mac(self, mac, item, data):
+	def _update_item_by_mac(self, mac, column, data):
 		for row in range(self.stations_table_model.rowCount()):
 			item_mac = self.stations_table_model.item(row, 0)
-			if item_mac and item_mac.text().upper() == mac.upper():
-				item = self.stations_table_model.item(row, item) 
+			if item_mac and item_mac.data(Qt.UserRole) == mac:
+				item = self.stations_table_model.item(row, column) 
 				if item:
 					item.setText(str(data))
+		model = self.stations_table_model
+		model.dataChanged.emit(model.index(0, 0), model.index(model.rowCount() - 1, model.columnCount() - 1))
+		self.stations_table.update()
+
 
 	def create_progress_bar(self, label, min, max, progress, format):
 		layout = QHBoxLayout()
@@ -399,13 +451,12 @@ class DeauthDialog(QDialog):
 	
 	def packet_handler(self, pkt):
 		if pkt.haslayer(RadioTap):
+			wifi = WiFi_Parser(pkt)
 			st_mac = pkt.addr1
 
 			if pkt.type == 1 and pkt.subtype == 13:
 				if st_mac in self.stations:
 					self.stations[st_mac]['acks'] += 1
-
-			wifi = WiFi_Parser(pkt)
 
 			if pkt.haslayer(Dot11Beacon):
 				bssid = pkt.addr3
@@ -426,11 +477,8 @@ class DeauthDialog(QDialog):
 			ap_mac = pkt.addr1
 			st_mac = pkt.addr2
 
-			#if ap_mac == self.bssid:
-			#	self.safe_update_ap_rssi(wifi.RadioTap_Attr('dBm_AntSignal'))
-
 			# Честно, я с этим пиздец как заебался, но работает норм :))))
-			if ((ap_mac == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])) and self.recv_beacon_flag:
+			if ((ap_mac == self.bssid) and (pkt.type == 1 and pkt.subtype in [8, 9])):
 				if not st_mac in self.stations:
 					self.safe_log(f'[+] Found station {self.vendor_oui.get_mac_vendor_mixed(st_mac)}')
 					self.stations[st_mac] = {
