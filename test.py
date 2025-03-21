@@ -48,7 +48,25 @@ class HexDumpDialog(QDialog):
 		
 		self.init_ui()
 		self.insert_raw_data()
-		self.highlight_items(0, 18)
+		self.parse_packets()
+		
+	def parse_packets(self):
+		rt_len = self.raw_data[2]
+		self.highlight_items(0, rt_len)
+		frame_type = self.raw_data[rt_len:rt_len+2]
+		
+		if frame_type == b'\x80\x00':
+			mac_offset = rt_len + 4
+			addr1 = self.raw_data[mac_offset:mac_offset+6]
+			self.highlight_items(mac_offset, 6, "#85aff2", "white")
+			self.highlight_items(mac_offset +6, 6, "#2f7cf7", "white")
+			self.highlight_items(mac_offset +12, 6, "#9ea5b0", "white")
+
+			tagged_offset = mac_offset + 32
+			remaining_length = len(self.raw_data) - tagged_offset
+			self.highlight_items(tagged_offset, remaining_length)
+			print(self.raw_data[tagged_offset:remaining_length])
+			
 
 	def init_ui(self):
 		self.setGeometry(*self.center_window(1000, 510))
@@ -143,7 +161,7 @@ class HexDumpDialog(QDialog):
 			self.hex_table.setColumnWidth(col, 35)
 			
 
-	def highlight_items(self, offset, count):
+	def highlight_items(self, offset, count, bg="yellow", fg="black"):
 		for row in range(self.hex_table_model.rowCount()):
 			for col in range(self.hex_table_model.columnCount()):
 				hex_index = self.hex_table_model.index(row, col)
@@ -155,9 +173,11 @@ class HexDumpDialog(QDialog):
 				cell_index = hex_item.data(Qt.UserRole)
 				if not cell_index is None:
 					if offset <= cell_index < offset + count:
-						hex_item.setBackground(QColor("yellow"))
+						hex_item.setBackground(QColor(bg))
+						hex_item.setForeground(QColor(fg))
 						if not ascii_item is None:
-							ascii_item.setBackground(QColor("yellow"))
+							ascii_item.setBackground(QColor(bg))
+							ascii_item.setForeground(QColor(fg))
 
 	def sync_selection_hex_ascii(self, selected, _):
 		if QApplication.focusWidget() is not self.hex_table:
