@@ -4,29 +4,79 @@ import pcap
 
 interface = "radio0mon"
 
+ieee80211_radiotap_presents_names = {
+	0: 'TSFT',
+	1: 'Flags',
+	2: 'Rate',
+	3: 'Channel',
+	4: 'FHSS',
+	5: 'dbm_Antenna_Signal',
+	6: 'dbm_Antenna_Noise',
+	7: 'Lock_Quality',
+	8: 'TX_Attenuation',
+	9: 'db_TX_Attenuation',
+	10: 'dbm_TX_Power',
+	11: 'Antenna',
+	12: 'db_Antenna_Signal',
+	13: 'db_Antenna_Noise',
+	14: 'RX_Flags',
+	15: 'TX_Flags',
+	16: 'RTS_retries',
+	17: 'Data_retries',
+	18: 'Channel_plus',
+	19: 'MCS',
+	20: 'A_MPDU_Status',
+	21: 'VHT_Info',
+	22: 'Frame_timestamp',
+	23: 'HE_Info',
+	24: 'HE_MU_Info',
+	25: 'RESERVED_1',
+	26: 'Null_Length_PSDU',
+	27: 'L_SIG',
+	28: 'TLVs',
+	29: 'RadioTap_NS_Next',
+	30: 'Vendor_NS_Next',
+	31: 'Ext'
+}
+
+ieee80211_radiotap_channel_flags_names = [
+	'700MHz',
+	'800MHz',
+	'900MHz',
+	'Turbo',
+	'CCK',
+	'OFDM',
+	'2GHz',
+	'5GHz',
+	'Passive',
+	'Dynamic CCK-OFDM',
+	'GFSK'
+]
+
+
 ieee80211_radiotap_presents_sizes_aligns = {
-	'IEEE80211_RADIOTAP_TSFT': {'size': 8, 'align': 8},
-	'IEEE80211_RADIOTAP_Flags': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_Rate': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_Channel': {'size': 4, 'align': 2},
-	'IEEE80211_RADIOTAP_FHSS': {'size': 2, 'align': 2},
-	'IEEE80211_RADIOTAP_dbm_Antenna_Signal': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_dbm_Antenna_Noise': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_Lock_Quality': {'size': 2, 'align': 2},
-	'IEEE80211_RADIOTAP_TX_Attenuation': {'size': 2, 'align': 2},
-	'IEEE80211_RADIOTAP_db_TX_Attenuation': {'size': 2, 'align': 2},
-	'IEEE80211_RADIOTAP_dbm_TX_Power': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_Antenna': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_db_Antenna_Signal': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_db_Antenna_Noise': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_RX_Flags': {'size': 2, 'align': 2},
-	'IEEE80211_RADIOTAP_TX_Flags': {'size': 2, 'align': 2},
-	'IEEE80211_RADIOTAP_RTS_retries': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_Data_retries': {'size': 1, 'align': 1},
-	'IEEE80211_RADIOTAP_MCS': {'size': 3, 'align': 1},
-	'IEEE80211_RADIOTAP_A_MPDU_Status': {'size': 8, 'align': 4},
-	'IEEE80211_RADIOTAP_VHT_Info': {'size': 12, 'align': 2},
-	'IEEE80211_RADIOTAP_Frame_timestamp': {'size': 12, 'align': 8},
+	0: {'size': 8, 'align': 8},    # TSFT
+	1: {'size': 1, 'align': 1},    # Flags
+	2: {'size': 1, 'align': 1},    # Rate
+	3: {'size': 4, 'align': 2},    # Channel
+	4: {'size': 2, 'align': 2},    # FHSS
+	5: {'size': 1, 'align': 1},    # dbm_Antenna_Signal
+	6: {'size': 1, 'align': 1},    # dbm_Antenna_Noise
+	7: {'size': 2, 'align': 2},    # Lock_Quality
+	8: {'size': 2, 'align': 2},    # TX_Attenuation
+	9: {'size': 2, 'align': 2},    # db_TX_Attenuation
+	10: {'size': 1, 'align': 1},   # dbm_TX_Power
+	11: {'size': 1, 'align': 1},   # Antenna
+	12: {'size': 1, 'align': 1},   # db_Antenna_Signal
+	13: {'size': 1, 'align': 1},   # db_Antenna_Noise
+	14: {'size': 2, 'align': 2},   # RX_Flags
+	15: {'size': 2, 'align': 2},   # TX_Flags
+	16: {'size': 1, 'align': 1},   # RTS_retries
+	17: {'size': 1, 'align': 1},   # Data_retries
+	18: {'size': 3, 'align': 1},   # MCS
+	19: {'size': 8, 'align': 4},   # A_MPDU_Status
+	20: {'size': 12, 'align': 2},  # VHT_Info
+	21: {'size': 12, 'align': 8}   # Frame_timestamp
 }
 pkt = \
 	b"\x00\x00\x12\x00\x2e\x48\x00\x00\x00\x02\x8a\x09\xa0\x00\xbf\x01" \
@@ -54,6 +104,27 @@ pkt = \
 	b"\xb1\x01\xc0\x33\x2a\xff\x92\x04\x2a\xff\x92\x04\xc0\x05\x00\x00" \
 	b"\x00\x2a\xff\xc3\x03\x01\x02\x02"
 
+pkt2 = \
+	b"\x00\x00\x24\x00\x2f\x40\x00\xa0\x20\x08\x00\x00\x00\x00\x00\x00" \
+	b"\xfe\x67\x53\x01\x00\x00\x00\x00\x10\x02\x6c\x09\xa0\x00\xba\x00" \
+	b"\x00\x00\xba\x00\x80\x00\x00\x00\xff\xff\xff\xff\xff\xff\xd2\xaf" \
+	b"\x7d\x6e\x40\x2a\xd2\xaf\x7d\x6e\x40\x2a\xf0\x30\x85\x61\xd8\x4e" \
+	b"\x00\x00\x00\x00\x64\x00\x11\x85\x00\x0c\x72\x65\x61\x6c\x6d\x65" \
+	b"\x20\x43\x32\x31\x2d\x59\x01\x08\x82\x84\x8b\x96\x0c\x12\x18\x24" \
+	b"\x03\x01\x09\x2a\x01\x00\x32\x04\x30\x48\x60\x6c\x05\x05\x01\x03" \
+	b"\x00\x00\x00\xdd\x18\x00\x50\xf2\x02\x01\x01\x80\x00\x03\xa4\x4f" \
+	b"\x00\x27\xa4\x4f\x00\x42\x43\x80\x00\x62\x32\x41\x00\x30\x14\x01" \
+	b"\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac" \
+	b"\x02\x0c\x00\xdd\x06\x40\x45\xda\x01\x02\x00\xdd\x1a\x00\x90\x4c" \
+	b"\x04\x08\xbf\x0c\x31\x71\xa0\x03\xfe\xff\x00\x00\xfe\xff\x00\x00" \
+	b"\xc0\x05\x00\x00\x00\xfe\xff\x2d\x1a\x2d\x01\x13\xff\x00\x00\x00" \
+	b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \
+	b"\x00\x00\x00\x3d\x16\x09\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00" \
+	b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x3e\x01\x00\x7f\x08" \
+	b"\x00\x00\x00\x00\x00\x00\x00\x00\xbf\x0c\x31\x71\xa0\x03\xfe\xff" \
+	b"\x00\x00\xfe\xff\x00\x00\x6e\xe1\x7d\xda"
+
+
 def return_RadioTap_Header(pkt):
 	it_version, it_pad, it_len, it_present = struct.unpack_from('<BBHI', pkt, 0)
 	return {
@@ -66,9 +137,38 @@ def return_RadioTap_Header(pkt):
 def return_RadioTap_presents(pkt):
 	rt_header = return_RadioTap_Header(pkt)
 	rt_presents_offset = 4
+	presents_ext_flag = True
+	rt_presents = int.from_bytes(pkt[rt_presents_offset:rt_presents_offset+4], 'little')
+	rt_presents_all = []
 	
-
-return_RadioTap_presents(pkt)
+	while presents_ext_flag:
+		rt_presents = int.from_bytes(pkt[rt_presents_offset:rt_presents_offset+4], 'little')
+		rt_presents_all.append(rt_presents)
+		presents_ext_flag = rt_presents & (1 << 31)
+		rt_presents_offset += 4
+		
+	return rt_presents_all, rt_header
+	
+def return_RadioTap_PresentsFlags(pkt):
+	rt_presents, rt_header = return_RadioTap_presents(pkt)
+	rt_presents_len = len(rt_presents) * 4
+	offset = rt_presents_len + 4
+	presents = []
+	
+	for rt_present in rt_presents:
+		for bit in range(29):
+			if rt_present & (1 << bit):
+				align = ieee80211_radiotap_presents_sizes_aligns[bit]['align']
+				size = ieee80211_radiotap_presents_sizes_aligns[bit]['size']
+				offset = (offset + (align - 1)) & ~(align - 1)
+				present = pkt[offset:offset+size]
+				
+				presents.append((bit, present))
+				
+				offset += size
+	return presents
+	
+print(return_RadioTap_PresentsFlags(pkt2))
 
 def packet_handler(ts, pkt):
 	if b'\xa8\x63\x7d\xe3\x01\x12' in pkt:
