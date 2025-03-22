@@ -67,9 +67,14 @@ class StylesDeligate(QStyledItemDelegate):
 			painter.drawText(text_x, text_y-1, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, text)
 			font.setUnderline(False)
 			font.setBold(False)
+			font.setItalic(True)
 			painter.setFont(font)
 			painter.setPen(QColor(Qt.gray))
-			painter.drawText(text_x, text_y + line_height, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, "EAPOL")
+			painter.drawText(text_x +15, text_y + line_height, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, "(EAPOL)")
+
+			eapol_icon = QIcon('icons/key.png')
+			eapol_icon_rect = QRect(option.rect.x() + icon_size, option.rect.y() + line_height +5, 16, 16)
+			eapol_icon.paint(painter, eapol_icon_rect, Qt.AlignVCenter)
 
 			painter.restore()
 		else:
@@ -593,3 +598,9 @@ class DeauthDialog(QDialog):
 					print(e)
 		else:
 			QMessageBox.critical(self, "Ошибка", f"Отсутсвуют данные от {self.vendor_oui.get_mac_vendor_mixed(self.bssid)}")
+
+if __name__ == '__main__':
+	app = QApplication(sys.argv)
+	window = DeauthDialog('radio0mon', 'a8:63:7d:e3:01:12', 13)
+	window.show()
+	sys.exit(app.exec_())

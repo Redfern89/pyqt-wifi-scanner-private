@@ -468,3 +468,7 @@ class WiFiInject:
 				Dot11Elt(ID=48, info=rsn_info)
 		pkt = bytes(packet)
 		self.pcap.sendpacket(pkt)
+
+class Utils:
+	def mac2str(mac):
+		return ":".join(f"{b:02X}" for b in mac)

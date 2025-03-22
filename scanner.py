@@ -47,6 +47,8 @@ class SSIDColorDelegate(QStyledItemDelegate):
 			text_y = option.rect.y() + 2  # Чуть ниже, чтобы не прилипало к верху
 			font_bold = QFont()
 			font_bold.setBold(True)
+			font_bold.setUnderline(True)
+			font_bold.setItalic(True)
 			font_normal = QFont()
 			font_normal.setItalic(True)
 			font_metrics = painter.fontMetrics()
@@ -55,13 +57,19 @@ class SSIDColorDelegate(QStyledItemDelegate):
 			if icon:
 				icon_rect = QRect(option.rect.x()+2, option.rect.y() +2, icon_size, icon_size)
 				icon.paint(painter, icon_rect, Qt.AlignVCenter)
-
+	
 			painter.setFont(font_bold)
 			painter.setPen(option.palette.text().color())
-			painter.drawText(text_x, text_y-3, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, '<hidden>')
+			painter.setPen(QColor('#ff0000'))
+			painter.drawText(text_x, text_y, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, '<hidden>')
 			painter.setFont(font_normal)
 			painter.setPen(QColor(Qt.gray))
-			painter.drawText(text_x, text_y + line_height, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, "(pending)")
+
+			pending_icon = QIcon('icons/pending.png')
+			pending_icon_rect = QRect(option.rect.x() + icon_size + 5, option.rect.y() + line_height +5, 16, 16)
+			pending_icon.paint(painter, pending_icon_rect, Qt.AlignVCenter)
+
+			painter.drawText(text_x +20, text_y + line_height, option.rect.width() - text_x, line_height, Qt.AlignLeft | Qt.AlignTop, "(pending)")
 
 			painter.restore()
 		else:
