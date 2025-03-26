@@ -283,6 +283,9 @@ class MainWindow(QMainWindow):
 		self.btn_targ = QPushButton('Выбор цели')
 		self.btn_targ.setIcon(QIcon('icons/target.png'))
 		self.btn_targ.setIconSize(QSize(24, 24))
+		self.btn_sett = QPushButton('Настройки')
+		self.btn_sett.setIcon(QIcon('icons/settings.png'))
+		self.btn_sett.setIconSize(QSize(24, 24))
 		
 		self.btn_wifi.clicked.connect(self.show_wifiman_dialog)
 		self.btn_scan.clicked.connect(self.scan_networks)
@@ -304,6 +307,7 @@ class MainWindow(QMainWindow):
 		top_layout.addWidget(self.btn_scan)
 		top_layout.addWidget(self.btn_stop)
 		top_layout.addWidget(self.btn_targ)
+		top_layout.addWidget(self.btn_sett)
 		top_layout.addWidget(self.wps_checkbox)
 		top_layout.addWidget(self.sta_checkbox)
 		top_layout.setContentsMargins(5, 5, 5, 0)
@@ -577,14 +581,14 @@ class MainWindow(QMainWindow):
 				break
 			if self.interrupt_flag:
 				break
-			ch = random.choice(self.supported_channels)
-			self.wifi.switch_iface_channel(self.interface, ch)
-			self.safe_chlabel_set_ch(str(ch))
-			time.sleep(0.3)
-			#for ch in self.supported_channels:
-			#	self.wifi.switch_iface_channel(self.interface, ch)
-			#	self.safe_chlabel_set_ch(str(ch))
-			#	time.sleep(1)
+			#ch = random.choice(self.supported_channels)
+			#self.wifi.switch_iface_channel(self.interface, ch)
+			#self.safe_chlabel_set_ch(str(ch))
+			#time.sleep(0.3)
+			for ch in self.supported_channels:
+				self.wifi.switch_iface_channel(self.interface, ch)
+				self.safe_chlabel_set_ch(str(ch))
+				time.sleep(2)
 
 	def sniff_packets(self):
 		sniff(iface=self.interface, prn=self.radio_packets_handler, store=0, stop_filter=lambda pkt: (self.interrupt_flag))

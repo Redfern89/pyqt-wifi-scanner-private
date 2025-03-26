@@ -193,6 +193,9 @@ class RadioTap:
 		for rt_present in rt_presents:
 			for bit in range(29):
 				if rt_present & (1 << bit):
+					'''
+						Как я с этим заебался..... Ебучие выравнивания
+					'''
 					align = self.ieee80211_radiotap_presents_sizes_aligns[bit]['align']
 					size = self.ieee80211_radiotap_presents_sizes_aligns[bit]['size']
 					offset = (offset + (align - 1)) & ~(align - 1)
@@ -266,6 +269,7 @@ class Dot11:
 		rt_header = rt.return_RadioTap_Header()
 		rt_length = rt_header['it_len']
 		self.pkt = pkt[rt_length:]
+		self.rt_length = rt_length
 
 		'''
 			IEEE 802.11-2016
@@ -427,9 +431,81 @@ class Dot11:
 			}
 		return None
 
+	def return_dot11_length(self):
+		_len = 10 # Frame Control + Duration + Addr1
+		fc_flags = self.return_dot11_framecontrol_flags()
+
+		frame_control = self.return_dot11_framecontrol()
+		if frame_control in self.addr2_dot11_frames:
+			_len += 6
+		if frame_control in self.addr3_dot11_frames:
+			_len += 6
+
+		if 7 in fc_flags:
+			_len += 4
+
+		_len += 2 # Sequence control
+
+		return _len
+
+	def return_dot11_offset(self):
+		return self.rt_length
+
 class Dot11Elt:
 	def __init__(self, pkt):
 		self.pkt = pkt
+		self.dot11 = Dot11(pkt)
+		dot11_offset = self.dot11.return_dot11_offset()
+		dot11_length = self.dot11.return_dot11_length()
+		self.elt_offset = dot11_offset + dot11_length
+
+		self.authentication_algoritms = {
+			0: 'Open system',
+			1: 'Shared key',
+			2: 'Fast BSS',
+			3: 'SAE',
+			65535: 'Vendor specific'
+		}
+
+		self.capabilities = [
+			'ESS',
+			'IBSS',
+			'CF Pollable',
+			'CF-Poll Request',
+			'Privacy',
+			'Short Preamble',
+			'Reserved 1',
+			'Reserved 2',
+			'Spectrum Management',
+			'QoS',
+			'Short Slot Time',
+			'APSD',
+			'Radio Measurement',
+			'Reserved 3',
+			'Delayed Block Ack',
+			'Immediate Block Ack'
+		]
+
+		self.dmg_capabilities = {
+			8: 'Spectrum Management',
+			9: 'Triggered Unscheduled PS',
+			10: 'Reserved 1',
+			11: 'Reserved 2',
+			12: 'Radio Measurement',
+			13: 'Reserved 3',
+			14: 'Reserved 4',
+			15: 'Reserved 5'
+		}
+
+	def return_dot11elt_fixed(self):
+		
+
+	def return_dot11elt_tags(self):
+
+
+		print(self.pkt[elt_offset:])
+
+
 
 
 interface = "radio0mon"
@@ -587,8 +663,8 @@ pkt4 = \
 
 
 
-dot11 = Dot11(pkt4)
-print(dot11.return_dot11_framecontrol_flags())
+dot11elt = Dot11Elt(pkt)
+dot11elt.return_dot11_elt_tags()
 
 def packet_handler(ts, pkt):
 	if b'\xa8\x63\x7d\xe3\x01\x12' in pkt:
