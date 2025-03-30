@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 	QMainWindow, QTableView, QGroupBox, QFrame, QSpinBox, QDoubleSpinBox, QCheckBox, QLayout
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPainter, QColor, QPen, QPainterPath, QFont, QKeyEvent
-from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot, QRect
+from PyQt5.QtCore import Qt, QEvent, QSize, QTimer, QObject, QMetaObject, Q_ARG, pyqtSlot, QRect, QTimer
 
 import sys
 import csv
@@ -177,6 +177,13 @@ class DeauthDialog(QDialog):
 			return
 
 		self.log(f'[+] Target: {self.vendor_oui.get_mac_vendor_mixed(self.bssid)}')
+		self.channel_timer = QTimer()
+		self.channel_timer.setInterval(1000)
+		self.channel_timer.timeout.connect(self.channel_timer_timeout)
+		self.channel_timer.start()
+	
+	def channel_timer_timeout(self):
+		self.wifiman.switch_iface_channel(self.interface, self.channel)		
 
 	def init_ui(self):
 		# --- ЦЕНТРУЕМ ОКНО ---

