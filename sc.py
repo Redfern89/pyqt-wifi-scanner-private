@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
 
 from scapy.all import *
-import pcapy
+from test import PacketBuilder
 
-pcap = pcapy.open_live('radio0mon', 65535, 0, 0)
+pb = PacketBuilder()
 
-def rnd_bssid():
-	return ":".join(f"{random.randint(0x00, 0xFF):02x}" for _ in range(6))
+#e = EAPOL(type=1)
+#e.show()
 
-#pkt = \
-#    RadioTap() / \
-#    Dot11(type=0, subtype=6, addr1=rnd_bssid(), addr2=rnd_bssid(), addr3=rnd_bssid()) / \
-#	Dot11Action(category=0, action=0)
-    #Dot11ReassoResp(cap=0x1101, status=0, AID=1) / \
-	#Dot11Elt(ID=1, info=b'\x82\x84\x8b\x96')
+e = LLC() / SNAP() / EAPOL(type=0, version=1) / EAP(code=2, id=11, type=1, identity="WFA-SimpleConfig-Registrar-1-0")
+e.show()
 
-llc = LLC() / SNAP(OUI=0, code=0x888E) 
-
-print(llc.show())
-
-#while 1:
-#	pcap.sendpacket(raw(pkt))
+print(raw(e))

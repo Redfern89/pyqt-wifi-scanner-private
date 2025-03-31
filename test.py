@@ -713,7 +713,18 @@ class PacketBuilder:
 		packet.extend(struct.pack('<H', status_code))
 		packet.extend(struct.pack('<H', (assoc_id & 0x3FFF)))
 
-		return bytes(packet)		
+		return bytes(packet)
+		
+	def Dot11ProbeReq(self):
+		pass
+	
+	def Dot11ProbeResp(self, timestamp=0, beacon_interval=0x0000,  capabilities=0x0000):
+		packet = bytearray()
+		packet.extend(struct.pack('<Q', timestamp))
+		packet.extend(struct.pack('<H', beacon_interval))
+		packet.extend(struct.pack('<H', capabilities))
+		
+		return bytes(packet)
 
 	def Dot11Elt(self, id, info):
 		packet = bytearray()
@@ -722,5 +733,20 @@ class PacketBuilder:
 		packet.extend(info)
 	
 		return bytes(packet)
+		
+		
+	def Dot11LLC_SNAP(self, oui, code):
+		packet = bytearray()
+		packet.extend(b'\xAA\xAA\x03') # LLC / DSAP, SSAP = SNAP, Control UI = 3
+		packet.extend(struct.pack('<3s', self.mac2bin(oui)))
+		packet.extend(struct.pack('>H', code))
 
+		return bytes(packet)
+		
+	def EAPOL(self, version, type, length):
+		packet = bytearray()
+		packet.extend(struct.pack('>B', version))
+		packet.extend(struct.pack('>B', type))
+		packet.extend(struct.pack('>H', length))
 
+		return bytes(packet)
