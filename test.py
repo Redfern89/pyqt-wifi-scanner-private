@@ -251,7 +251,7 @@ class IEEE80211_DEFS:
 		'IEEE80211_FC_QOS_CF_POLL_NO_DATA': 0xE8,      # QoS CF-Poll (no data)
 		'IEEE80211_FC_QOS_CF_ACK_CF_POLL': 0xF8,       # QoS CF-Ack +CF-Poll (no data)
 	}
-
+		
 	'''
 		IEEE 802.11-2016
 		9.2 MAC frame formats
@@ -550,8 +550,8 @@ class RadioTap(IEEE80211_DEFS, IEEE80211_Utils):
 
 	def return_RadioTap_PresentFlag(self, flag):
 		rt_presents =  self.return_RadioTap_PresentsFlags()
-		flag_index = self.ieee80211_radiotap_channel_flags_indexes.get(flag, None)
-
+		flag_index =  self.ieee80211_radiotap_presents_names.get(flag, None) #self.ieee80211_radiotap_channel_flags_indexes.get(flag, None)
+		
 		if not flag_index is None:
 			if flag_index in rt_presents:
 				handlers = {
@@ -579,8 +579,10 @@ class Dot11(IEEE80211_DEFS, IEEE80211_Utils):
 		rt_length = rt_header['it_len']
 		self.pkt = pkt[rt_length:]
 		self.rt_length = rt_length
-		self.fcs_at_end = True if 4 in rt.return_RadioTap_PresentFlag('Flags') else False
-
+		self.fcs_at_end = False
+		rt_flags = rt.return_RadioTap_PresentFlag('Flags')
+		if rt_flags:
+			self.fcs_at_end = True if 4 in rt_flags else False
 
 		self.ieee80211_fc_management_types = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0]
 		self.ieee80211_fc_control_types = [0x44, 0x54, 0x64, 0x74, 0x84, 0x94, 0xA4, 0xB4, 0xC4, 0xD4, 0xE4, 0xF4]
@@ -696,7 +698,7 @@ class Dot11(IEEE80211_DEFS, IEEE80211_Utils):
 	def return_dot11_offset(self):
 		return self.rt_length
 
-class Dot11Elt (IEEE80211_DEFS, IEEE80211_Utils):
+class Dot11Elt(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self, pkt):
 		self.pkt = pkt
 		self.dot11 = Dot11(pkt)
@@ -760,10 +762,58 @@ class Dot11Elt (IEEE80211_DEFS, IEEE80211_Utils):
 
 	def return_dot11elt_tags(self):
 		pass
-
 		#print(self.pkt[elt_offset:])
 
+	def return_EAPOL_Data(self):
+		dot11_offset = self.dot11.return_dot11_offset()
+		dot11_length = self.dot11.return_dot11_length()		
+		offset = dot11_offset + dot11_length
+		dot11_fc_flags = self.dot11.return_dot11_framecontrol_flags()
+		fc = self.dot11.return_dot11_framecontrol()
+		
+		# Not protected flag and FrameControl = Data / QoS Data wthout NULL-function
+		if not 6 in dot11_fc_flags and fc in [0x08, 0x18, 0x28, 0x38, 0x88, 0x98,0xA8, 0xB8]:
+			# LLC / SNAP, Control = UI (0x03), Vendor OUI = 00:00:00, Type = 802.1X Auth
+			# Знаю, по идиотски, но у мнее лень было придумываать
+			if self.pkt[offset:offset+8] == b'\xaa\xaa\x03\x00\x00\x00\x88\x8e':
+				eapol_pkt = self.pkt[offset +8:]
+				eapol_version = eapol_pkt[0]
+				eapol_type = eapol_pkt[1]
+				eapol_length, = struct.unpack('>H', eapol_pkt[2:4])
+				eapol_info = eapol_pkt[4:]
+				#hex_str = ' '.join(format(x, '02x') for x in eapol_pkt)
+				return {
+					'version': eapol_version,
+					'type': eapol_type,
+					'length': eapol_length,
+					'info': eapol_info
+				}
 
+		return None
+		
+	def return_EAPOL_Handshake(self):
+		eapol = self.return_EAPOL_Data()
+		if eapol:
+			if eapol.get('type', None) == 3:
+				eapol_info = eapol.get('info', None)
+				if eapol_info:
+					wpa_len = struct.unpack('>H', eapol_info[93:95])[0]
+					return {
+						'desc': eapol_info[0],
+						'info': eapol_info[1:3],
+						'length': struct.unpack('>H', eapol_info[3:5])[0],
+						'replay_counter': struct.unpack('>Q', eapol_info[5:13])[0],
+						'nonce': eapol_info[13:45],
+						'iv': eapol_info[45:61],
+						'rsc': eapol_info[61:69],
+						'id': eapol_info[69:77],
+						'mic': eapol_info[77:93],
+						'wpa_len': wpa_len,
+						'wpa_key': eapol_info[95:95+wpa_len] if wpa_len else None
+					}
+	
+		return None
+				
 class PacketBuilder(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self):
 		pass
