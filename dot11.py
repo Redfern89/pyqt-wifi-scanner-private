@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 import struct
-import pcap
-
-import numpy as np
 
 ######################
 #       Utils        #
@@ -43,8 +40,6 @@ class IEEE80211_Utils:
 	def get_struct_format(self, size, signed):
 		formats = {1: 'b' if signed else 'B', 2: 'h' if signed else 'H', 4: 'i' if signed else 'I', 8: 'q' if signed else 'Q'}
 		return formats.get(size, f'{size}s')  # Если что-то не так — закинем как строку
-
-
 
 ######################
 #    Definitions     #
@@ -198,7 +193,7 @@ class IEEE80211_DEFS:
 	'''
 		IEEE 802.11-2016
 		9.2 MAC frame formats
-		    ╰─> 9.2.4.1.3 Type and Subtype subfields		
+			╰─> 9.2.4.1.3 Type and Subtype subfields		
 	'''
 	ieee80211_fc_types = {
 		
@@ -257,7 +252,7 @@ class IEEE80211_DEFS:
 		9.2 MAC frame formats
 			├─> 9.2.4.1.4 To DS and From DS subfields
 			├─> 9.2.4.1.5 More Fragments subfield 
-		    ├─> 9.2.4.1.6 Retry subfield
+			├─> 9.2.4.1.6 Retry subfield
 			├─> 9.2.4.1.7 Power Management subfield
 			├─> 9.2.4.1.8 More Data subfield
 			├─>	9.2.4.1.9 Protected Frame subfield
@@ -277,8 +272,8 @@ class IEEE80211_DEFS:
 	'''
 		IEEE 802.11-2016
 		   9.4 Management and Extension frame body components
-		      ╰─> 9.4.1 Fields that are not elements
-			        ╰─> 9.4.1.1 Authentication Algorithm Number field
+			  ╰─> 9.4.1 Fields that are not elements
+					╰─> 9.4.1.1 Authentication Algorithm Number field
 	'''
 	ieee80211_authentication_algoritms = {
 		0: 'Open system',
@@ -291,8 +286,8 @@ class IEEE80211_DEFS:
 	'''
 		IEEE 802.11-2016
 		   9.4 Management and Extension frame body components
-		      ╰─> 9.4.1 Fields that are not elements
-			        ╰─> 9.4.1.4 Capability Information field
+			  ╰─> 9.4.1 Fields that are not elements
+					╰─> 9.4.1.4 Capability Information field
 	'''
 	ieee80211_capabilities = [
 		'ESS',
@@ -317,8 +312,8 @@ class IEEE80211_DEFS:
 	'''
 		IEEE 802.11-2016
 		   9.4 Management and Extension frame body components
-		      ╰─> 9.4.1 Fields that are not elements
-			        ╰─> 9.4.1.7 Reason Code field
+			  ╰─> 9.4.1 Fields that are not elements
+					╰─> 9.4.1.7 Reason Code field
 	'''
 	ieee80211_reason_codes = {
 		0: 'Reserved',                          # Reserved
@@ -367,8 +362,8 @@ class IEEE80211_DEFS:
 	'''
 		IEEE 802.11-2016
 		   9.4 Management and Extension frame body components
-		      ╰─> 9.4.1 Fields that are not elements
-			        ╰─> 9.4.1.9 Status Code field
+			  ╰─> 9.4.1 Fields that are not elements
+					╰─> 9.4.1.9 Status Code field
 	'''
 	ieee80211_status_codes = {
 		0: "SUCCESS",                                       # Successful
@@ -451,91 +446,121 @@ class IEEE80211_DEFS:
 		107: "AUTHORIZATION_DEENABLED"                      # Authorization deenabled
 	}
 
+	ieee80211_fc_management_types = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0]
+	ieee80211_fc_control_types = [0x44, 0x54, 0x64, 0x74, 0x84, 0x94, 0xA4, 0xB4, 0xC4, 0xD4, 0xE4, 0xF4]
+	ieee80211_fc_data_types = [0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78]
+	ieee80211_fc_qos_data_types = [0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8]
 
-	ieee80211_wifialiance_ids = {
-		0x104a: 'VERSION',
-		
-	}
+	addr2_dot11_frames = [
+			# Management
+			0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 
+			# Control
+			0x44, 0x74, 0xA4, 0xB4, 0x84, 0x94,
+			# Data
+			0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8
+			]
+	addr3_dot11_frames = [
+			# Management
+			0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0,
+			# Data
+			0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8
+	]
+	
+import struct
 
-
-
-######################
-#      RadioTap      #
-######################
-class RadioTap(IEEE80211_DEFS, IEEE80211_Utils):
+# Разложи меня по байтам, если сможешь
+# Тут собраны парсеры IEEE802.11 фреймов
+# а так-же вся боль и страдания разраба
+class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self, pkt):
+		# Принимаем пакет, в котором спрятаны все тайны Wi-Fi.
 		self.pkt = pkt
+		self.rt_header = self.return_RadioTap_Header()
+		self.dot11_start = self.rt_header.get('it_len', None)
 
+	######################
+	#      RadioTap      #
+	######################
 	def return_RadioTap_Header(self):
+		# Распаковываем заголовок RadioTap, который расскажет нам, как именно пакет долетел до нас.
 		it_version, it_pad, it_len, it_present = struct.unpack_from('<BBHI', self.pkt, 0)
 		return {
-			'it_version': it_version,
-			'it_pad': it_pad,
-			'it_len': it_len,
-			'it_present': it_present,
+			'it_version': it_version,  # Версия RadioTap (обычно 0)
+			'it_pad': it_pad,          # Выравнивание (кожаные мешки это придумали)
+			'it_len': it_len,          # Длина RadioTap-заголовка
+			'it_present': it_present   # Флаги наличия полей
 		}
 
 	def return_RadioTap_presents(self):
+		# Парсим флаги RadioTap и ищем, есть ли там дополнительные флаги.
 		rt_header = self.return_RadioTap_Header()
-		rt_presents_offset = 4
+		rt_presents_offset = 4  # Начало флагов после стандартного заголовка
 		presents_ext_flag = True
-		rt_presents = int.from_bytes(self.pkt[rt_presents_offset:rt_presents_offset+4], 'little')
 		rt_presents_all = []
 		
 		while presents_ext_flag:
+			# Читаем очередные 4 байта флагов
 			rt_presents = int.from_bytes(self.pkt[rt_presents_offset:rt_presents_offset+4], 'little')
 			rt_presents_all.append(rt_presents)
+			# Если установлен 31-й бит, значит, есть ещё один блок флагов
 			presents_ext_flag = rt_presents & (1 << 31)
 			rt_presents_offset += 4
 
 		return rt_presents_all
 	
 	def return_RadioTap_PresentsFlags(self):
+		# Разбираем, какие флаги присутствуют в RadioTap.
 		rt_presents = self.return_RadioTap_presents()
-		rt_presents_len = len(rt_presents) * 4
-		offset = rt_presents_len + 4
+		rt_presents_len = len(rt_presents) * 4  # Общая длина всех флагов
+		offset = rt_presents_len + 4  # Начинаем читать данные после флагов
 		presents = {}
 
 		for rt_present in rt_presents:
-			for bit in range(29):
-				if rt_present & (1 << bit):
-					'''
-						Как я с этим заебался..... Ебучие выравнивания
-					'''
+			for bit in range(29):  # Всего 29 возможных полей
+				if rt_present & (1 << bit):  # Проверяем, установлен ли бит
+					# Выравнивание и размер текущего параметра
 					align = self.ieee80211_radiotap_presents_sizes_aligns[bit]['align']
 					size = self.ieee80211_radiotap_presents_sizes_aligns[bit]['size']
+					# Выравниваем смещение (ВОТ ЭТОГО Я ОЧЕНЬ ДОЛГО ПОНЯТЬ НЕ МОГ!!!)
+					# Хотя все оказалось просто - смещение должно быть кратно выравни
+					# ванию для текущего флага
 					offset = (offset + (align - 1)) & ~(align - 1)
+					# Читаем сам параметр
 					present = self.pkt[offset:offset+size]
-					presents[bit] = present
-					offset += size
+					presents[bit] = {
+						self.ieee80211_radiotap_presents_names[bit]: present
+					}
+					offset += size  # Передвигаем указатель дальше
 		return presents
 
+	# Универсальная заглушка — если вдруг надо вернуть значение как есть.
 	def return_rt_default(self, val):
 		return val
 
+	# Читаем число в little-endian (мозг больших процессоров это не одобрит).
 	def return_rt_INT(self, val):
 		return int.from_bytes(val, 'little')
 
+	# Разбираем флаги (8 бит, ну почти как REG_RAX, только бесполезнее).
 	def return_rt_Flags(self, val):
 		result = {}
 		flags = int.from_bytes(val, 'little')
 		for bit in range(8):
 			if (flags & (1 << bit)):
 				result[bit] = self.ieee80211_radiotap_flags_names[bit]
-				#result.append({
-				#	bit: self.ieee80211_radiotap_flags_names[bit]
-				#})
 		return result
 
+	# Возвращаем скорость передачи данных, делённую на 2 (видимо, Wi-Fi жадный).
 	def return_rt_Rate(self, val):
 		return int.from_bytes(val, 'little') / 2
 
+	# Парсим информацию о частоте канала и его свойствах.
 	def return_rt_Channel(self, val):
-		channel_freq = int.from_bytes(val[:2], 'little')
-		__channel_flags = int.from_bytes(val[2:], 'little')
+		channel_freq = int.from_bytes(val[:2], 'little')     # Первые 2 байта — частота
+		__channel_flags = int.from_bytes(val[2:], 'little')  # Следующие 2 — флаги канала
 		channel_flags = []
 
-		for bit in range(16):
+		for bit in range(16):  # Всего 16 возможных флагов
 			if (__channel_flags & (1 << bit)):
 				channel_flags.append(self.ieee80211_radiotap_channel_flags_names.get(bit))
 		return {
@@ -544,517 +569,218 @@ class RadioTap(IEEE80211_DEFS, IEEE80211_Utils):
 			'flags': channel_flags
 		}
 
+	# Значение уровня сигнала в dBm (чем меньше, тем грустнее).
 	def return_rt_dBm(self, val):
 		return int.from_bytes(val, 'little', signed=True)
 
+	# Проверяем, есть ли конкретный флаг в RadioTap.
 	def return_RadioTap_PresentFlag(self, flag):
-		rt_presents =  self.return_RadioTap_PresentsFlags()
-		flag_index =  self.ieee80211_radiotap_presents_names.get(flag, None) #self.ieee80211_radiotap_channel_flags_indexes.get(flag, None)
-		
-		if not flag_index is None:
-			if flag_index in rt_presents:
-				handlers = {
-					0: self.return_rt_INT,
-					1: self.return_rt_Flags,
-					2: self.return_rt_Rate,
-					3: self.return_rt_Channel,
-					5: self.return_rt_dBm,
+		rt_presents = self.return_RadioTap_PresentsFlags()
+		flag_index = self.getKeyByVal(self.ieee80211_radiotap_presents_names, flag)
+		if flag_index in rt_presents:
+			flag_item = rt_presents.get(flag_index, None)
+			flag_data = flag_item.get(flag, None)
+			handlers = {
+				0: self.return_rt_INT,      # Просто число
+				1: self.return_rt_Flags,    # Набор флагов
+				2: self.return_rt_Rate,     # Скорость
+				3: self.return_rt_Channel,  # Инфа о канале
+				5: self.return_rt_dBm,      # Уровень сигнала
 
-					11: self.return_rt_INT
-				}
-				handler = handlers.get(flag_index, self.return_rt_default)
-				result = handler(rt_presents.get(flag_index))
-				return result
+				11: self.return_rt_INT      # Просто число (на всякий случай)
+			}
+			handler = handlers.get(flag_index, self.return_rt_default)
+			return handler(flag_data)
+
+		return None  # Если флага нет, то и данных нет (справедливо)
+
+	######################
+	#        Dot11       #
+	######################
+
+	# Ну вот и начинается декодинг головного мозга.
+	# Тут мы читаем первые два байта заголовка Dot11, получаем frame control.
+	# Достаём type и subtype, склеиваем их — и получаем тип фрейма, который можно гуглить в таблицах IEEE.
+	def return_Dot11_frame_control(self):
+		if self.dot11_start:
+			frame_control = int.from_bytes(self.pkt[self.dot11_start:self.dot11_start+2], 'little')
+
+			fc_type = (frame_control >> 2) & 0b11
+			fc_sub_type = (frame_control >> 4) & 0b1111
+			fc_type_subtype = (fc_sub_type << 4) | (fc_type << 2)
+
+			return fc_type_subtype
+
 		return None
-
-
-######################
-#        Dot11       #
-######################
-class Dot11(IEEE80211_DEFS, IEEE80211_Utils):
-	def __init__(self, pkt):
-		rt = RadioTap(pkt)
-		rt_header = rt.return_RadioTap_Header()
-		rt_length = rt_header['it_len']
-		self.pkt = pkt[rt_length:]
-		self.rt_length = rt_length
-		self.fcs_at_end = False
-		rt_flags = rt.return_RadioTap_PresentFlag('Flags')
-		if rt_flags:
-			self.fcs_at_end = True if 4 in rt_flags else False
-
-		self.ieee80211_fc_management_types = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0]
-		self.ieee80211_fc_control_types = [0x44, 0x54, 0x64, 0x74, 0x84, 0x94, 0xA4, 0xB4, 0xC4, 0xD4, 0xE4, 0xF4]
-		self.ieee80211_fc_data_types = [0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8]
-		self.addr2_dot11_frames = [
-				# Management
-				0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 
-				# Control
-				0x44, 0x74, 0xA4, 0xB4, 0x84, 0x94,
-				# Data
-				0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8
-				]
-		self.addr3_dot11_frames = [
-				# Management
-				0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0,
-				# Data
-				0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8
-		]
-
-
-	def mac2str(self, mac):
-		return ':'.join(f'{b:02x}' for b in mac)
-
-	def return_dot11_framecontrol(self):
-		frame_control = int.from_bytes(self.pkt[0:2], 'little')
-
-		fc_type = (frame_control >> 2) & 0b11
-		fc_sub_type = (frame_control >> 4) & 0b1111
-		fc_type_subtype = (fc_sub_type << 4) | (fc_type << 2)
-
-		return fc_type_subtype
 	
+	# Извлекаем флаги frame control. Они во втором байте.
+	# Проходимся по каждому биту — если горит, добавляем в словарь.
+	# Типа «ага, вот тут у нас есть protected, тут retry, а вот тут — ну чисто блестяшка, order bit».
 	def return_dot11_framecontrol_flags(self):
-		_frame_control_flags = self.pkt[1]
+		_frame_control_flags = self.pkt[self.dot11_start+1]
 		frame_control_flags = {}
 
 		for bit in range(8):
 			if _frame_control_flags & (1 << bit):
 				frame_control_flags[bit] = { bit: self.ieee80211_fc_flags[bit] }
-				
 
 		return frame_control_flags
 	
-	def return_dot11_haslayer(self, layer):
-		fc_layer = self.ieee80211_fc_types.get(layer, None)
-		if not fc_layer is None:
-			return fc_layer == self.return_dot11_framecontrol()
-		
-		return None
-	
+	# А вот и пляски с MAC-адресами.
+	# Проверяем тип фрейма, и если это наш тип, то по-старой доброй традиции:
+	# addr1 — получатель, addr2 — отправитель, addr3 — BSSID или что-то странное.
+	# Всё это выковыриваем из нужных смещений.	
 	def return_dot11_addrs(self):	
-		frame_control = self.return_dot11_framecontrol()
+		frame_control = self.return_Dot11_frame_control()
 		addrs = {}
-		if frame_control in self.ieee80211_fc_types.values():
-			addrs['addr1'] = self.mac2str(self.pkt[4:10])
+		if frame_control:
+			pkt = self.pkt[self.dot11_start:]
+			if frame_control in self.ieee80211_fc_types.values():
+				addrs['addr1'] = self.mac2str(pkt[4:10])
 
-			if frame_control in self.addr2_dot11_frames:
-				addrs['addr2'] = self.mac2str(self.pkt[10:16])
-			if frame_control in self.addr3_dot11_frames:
-				addrs['addr3'] = self.mac2str(self.pkt[16:22])
-			return addrs
+				if frame_control in self.addr2_dot11_frames:
+					addrs['addr2'] = self.mac2str(pkt[10:16])
+				if frame_control in self.addr3_dot11_frames:
+					addrs['addr3'] = self.mac2str(pkt[16:22])
+				return addrs
+
 		return None
 	
+	# Duration/ID — ну, или сколько времени мы просим не мешать (NAV).
+	# Откусываем два байта и обнуляем самый старший бит, потому что он там для спецрежимов.
 	def return_dot11_duration(self):
-		return int.from_bytes(self.pkt[2:4], 'little') & 0x7FFF
+		return int.from_bytes(self.pkt[self.dot11_start+2:self.dot11_start+4], 'little') & 0x7FFF
 	
+	# Тут мы парсим номер фрагмента и sequence number.
+	# Всё красиво: берём два байта, нижние 4 бита — это номер фрагмента, остальное — sequence.
+	# Если ты не любишь фрагментацию — ты не один, бро.
 	def return_dot11_frag_seq(self):
-		frame_control = self.return_dot11_framecontrol()
-		if frame_control in self.addr3_dot11_frames:
-			frag_seq = int.from_bytes(self.pkt[22:24], 'little')
-			frag = frag_seq & 0x0f
-			seq = (frag_seq >> 4)
-			
-			return {
-				'frag': frag,
-				'seq': seq
-			}
-		return None
-
-	def return_dot11_length(self):
-		_len = 10 # Frame Control + Duration + Addr1
-		fc_flags = self.return_dot11_framecontrol_flags()
-
-		frame_control = self.return_dot11_framecontrol()
-		if frame_control in self.addr2_dot11_frames:
-			_len += 6
-		if frame_control in self.addr3_dot11_frames:
-			_len += 6
-
-		#if 6 in fc_flags:
-			#pass # Пока что хуй знает. Да и надо ли оно?
-
-		if 7 in fc_flags:
-			_len += 4 # Order
-
-		if frame_control in self.ieee80211_fc_management_types and frame_control in self.ieee80211_fc_data_types:
-			_len += 2 # Sequence contro
-
-		if self.return_dot11_framecontrol() in [0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8]:
-			_len += 2 # QoS Control
-
-		if 6 in fc_flags:
-			# 1
-			ccmp_iv = self.pkt[_len:_len+8]
-			seq_num = ((ccmp_iv[3] & 0x0F) << 8) | ccmp_iv[4]
-			print(seq_num)
-			print(self.return_dot11_frag_seq())
-		
-
-		return _len
-
-	def return_dot11_offset(self):
-		return self.rt_length
-
-class Dot11Elt(IEEE80211_DEFS, IEEE80211_Utils):
-	def __init__(self, pkt):
-		self.pkt = pkt
-		self.dot11 = Dot11(pkt)
-		dot11_offset = self.dot11.return_dot11_offset()
-		dot11_length = self.dot11.return_dot11_length()
-		self.elt_offset = dot11_offset + dot11_length
-
-	def return_dot11elt_offset(self):
-		dot11_offset = self.dot11.return_dot11_offset()
-		dot11_length = self.dot11.return_dot11_length()
-		if self.dot11.return_dot11_haslayer('IEEE80211_FC_BEACON'):
-			return dot11_offset + dot11_length +12
-		if self.dot11.return_dot11_haslayer('IEEE80211_FC_PROBE_RESP'):
-			return dot11_offset + dot11_length +12
-
-		return dot11_offset + dot11_length
-	
-	def return_dot11elt_ies(self):
-		result = {}
-
-		dot11elt_offset = self.return_dot11elt_offset()
-		if dot11elt_offset:
-			if self.dot11.fcs_at_end:
-				dot11elt_length = len(self.pkt) -4
-			else:
-				dot11elt_length = len(self.pkt)
-
-			while (dot11elt_offset + 2 <= dot11elt_length):
-				TAG_ID = self.pkt[dot11elt_offset]
-				TAG_LEN = self.pkt[dot11elt_offset +1]
-				TAG_INFO = self.pkt[dot11elt_offset +2:dot11elt_offset + 2 + TAG_LEN]
+		frame_control = self.return_Dot11_frame_control()
+		if frame_control:
+			if frame_control in self.ieee80211_fc_management_types or \
+				frame_control in self.ieee80211_fc_data_types or \
+				frame_control in  self.ieee80211_fc_qos_data_types:
 				
-				result[TAG_ID] = {
-					'info': TAG_INFO,
-					'len': TAG_LEN
-				}
-
-				dot11elt_offset += 2 + TAG_LEN
-		return result
-
-	def return_dot11elt_beacon(self):
-		offset = self.dot11.return_dot11_length() + self.dot11.return_dot11_offset()
-		if self.dot11.return_dot11_haslayer('IEEE80211_FC_BEACON'):
-			_timestamp = int.from_bytes(self.pkt[offset:offset+8], 'little')
-			_interval = np.frombuffer(self.pkt[offset+8:offset+10], dtype=np.float16).newbyteorder('>')[0]
-			_interval /= 10000
-			_capabilities = int.from_bytes(self.pkt[offset+10:offset+12], 'little')
-			capabilities = {}
-			
-			for bit in range(16):
-				if (_capabilities & (1 << bit)):
-					capabilities[bit] = self.capabilities[bit]
-			
-			return {
-				'Timestamp': _timestamp,
-				'Interval': f'{_interval:.6f}',
-				'Capabilities': capabilities
-			}
-		
-		return None
-
-	def return_dot11elt_tags(self):
-		pass
-		#print(self.pkt[elt_offset:])
-
-	def return_EAPOL_Data(self):
-		dot11_offset = self.dot11.return_dot11_offset()
-		dot11_length = self.dot11.return_dot11_length()		
-		offset = dot11_offset + dot11_length
-		dot11_fc_flags = self.dot11.return_dot11_framecontrol_flags()
-		fc = self.dot11.return_dot11_framecontrol()
-		
-		# Not protected flag and FrameControl = Data / QoS Data wthout NULL-function
-		if not 6 in dot11_fc_flags and fc in [0x08, 0x18, 0x28, 0x38, 0x88, 0x98,0xA8, 0xB8]:
-			# LLC / SNAP, Control = UI (0x03), Vendor OUI = 00:00:00, Type = 802.1X Auth
-			# Знаю, по идиотски, но умнее лень было придумываать
-			if self.pkt[offset:offset+8] == b'\xaa\xaa\x03\x00\x00\x00\x88\x8e':
-				eapol_pkt = self.pkt[offset +8:]
-				eapol_version = eapol_pkt[0]
-				eapol_type = eapol_pkt[1]
-				eapol_length, = struct.unpack('>H', eapol_pkt[2:4])
-				eapol_info = eapol_pkt[4:]
-				#hex_str = ' '.join(format(x, '02x') for x in eapol_pkt)
-				return {
-					'version': eapol_version,
-					'type': eapol_type,
-					'length': eapol_length,
-					'info': eapol_info
-				}
-
-		return None
-		
-	def return_EAPOL_Handshake(self):
-		eapol = self.return_EAPOL_Data()
-		if eapol:
-			if eapol.get('type', None) == 3:
-				eapol_info = eapol.get('info', None)
-				if eapol_info:
-					wpa_len = struct.unpack('>H', eapol_info[93:95])[0]
-					return {
-						'desc': eapol_info[0],
-						'info': eapol_info[1:3],
-						'length': struct.unpack('>H', eapol_info[3:5])[0],
-						'replay_counter': struct.unpack('>Q', eapol_info[5:13])[0],
-						'nonce': eapol_info[13:45],
-						'iv': eapol_info[45:61],
-						'rsc': eapol_info[61:69],
-						'id': eapol_info[69:77],
-						'mic': eapol_info[77:93],
-						'wpa_len': wpa_len,
-						'wpa_key': eapol_info[95:95+wpa_len] if wpa_len else None
-					}
-	
-		return None
-				
-class PacketBuilder(IEEE80211_DEFS, IEEE80211_Utils):
-	def __init__(self):
-		pass
-	
-	def RadioTap_Channel(self, channel, flags=None):
-		if flags:
-			flags = self.makeFlagsField(self.ieee80211_radiotap_channel_flags_names, flags)
-		else:
-			flags = 0x0000;
-		
-		return int.from_bytes(struct.pack('<HH', channel, flags), 'little')
-
-	def RadioTap(self, it_pad=0x00, it_presents=None):
-		packet = bytearray()
-		presents = bytearray()
-		
-		# RadioTap header - Version (0x00), Padding, Length, Presents (to many)
-		packet.extend(struct.pack('<BB', 0x00, it_pad))
-		_it_presents = 0x00000000
-		
-		if it_presents:
-			offset = 8
-
-			for present, _ in it_presents.items():
-				present_index = self.getKeyByVal(self.ieee80211_radiotap_presents_names, present)
-				if present_index:
-					_it_presents |= (1 << present_index)
-
-			for bit in range(16):
-				if (_it_presents & (1 << bit)):
-					present_chunk = bytearray()
-					name = self.ieee80211_radiotap_presents_names.get(bit, None)
-					value = it_presents.get(name)
+				pkt = self.pkt[self.dot11_start:]
+				if frame_control in self.addr3_dot11_frames:
+					frag_seq = int.from_bytes(pkt[22:24], 'little')
+					frag = frag_seq & 0x0f
+					seq = (frag_seq >> 4)
 					
-					sa = self.ieee80211_radiotap_presents_sizes_aligns[bit]
-					align = sa.get('align', 1)
-					size = sa.get('size', 1)
+					return {
+						'frag': frag,
+						'seq': seq
+					}
+			return None
 
-					# Fucked stupid agliements blyatt
-					if offset % align != 0:
-						padding = align - (offset % align)
-						present_chunk.extend(b'\x00' * padding)
-						offset += padding
-					# 1: 'b' if signed else 'B', 2: 'h' if signed else 'H', 4: 'i' if signed else 'I', 8: 'q' if signed else 'Q'
-					fmt = self.get_struct_format(size, signed=value < 0)
-					present_chunk.extend(struct.pack(f'<{fmt}', value))
-					offset += size
-					presents.extend(bytes(present_chunk))
+	# Тут начинается шифровальная магия.
+	# Если фрейм защищён (Protected), определяем смещение до IV.
+	# Если это QoS, двигаем на +2.
+	# Потом читаем IV и пытаемся понять, что за зверь: TKIP, CCMP, или, упаси FSM, WEP.
+	def return_Dot11_Cipher_IV(self):
+		frame_control = self.return_Dot11_frame_control()
+		frame_control_flags = self.return_dot11_framecontrol_flags()
+		offset = self.dot11_start + 24 # FC + ID/Duration + Addr1,2,3 + Fragment/Sequence
 
-		it_len = len(presents) + 8
-		packet.extend(struct.pack('<H', it_len))
-		packet.extend(struct.pack('<I', _it_presents))
-		packet.extend(bytes(presents))
+		if frame_control in self.ieee80211_fc_qos_data_types:
+			offset += 2 # QoS Control field
 
-		return bytes(packet)
+		if frame_control in self.ieee80211_fc_data_types or frame_control in self.ieee80211_fc_qos_data_types:
+			if 6 in frame_control_flags:
+				iv = self.pkt[offset:offset+8]
 
-
-	def Dot11(self, fc, addr1, addr2=None, addr3=None, addr4=None, duration=0, frag=None, seq=None, fcflags=None, QoSControl=0x00, wep_iv=None, tkip_iv=None, ccmp_iv=None, ht_control=None):
-		duration = (duration >> 1) & 0x7FFF
-		packet = bytearray()
-		flags = 0x00
-
-		if fcflags:
-			flags = self.makeFlagsField(self.ieee80211_fc_flags, fcflags)
-
-		packet.extend(struct.pack('<BBH6s', fc, flags, duration, self.mac2bin(addr1)))
-		if addr2:
-			packet.extend(struct.pack('<6s', self.mac2bin(addr2)))
-		if addr3:
-			packet.extend(struct.pack('<6s', self.mac2bin(addr3)))
-		if addr4:
-			packet.extend(struct.pack('<6s', self.mac2bin(addr4)))
+				if iv[3] & 0x20:
+					if iv[1] == ((iv[0] | 0x20) & 0x7f):
+						return {'tkip': iv}
+					elif iv[2] == 0x00:
+						return {'ccmp': iv}
+				else:
+					return {'wep': iv[:4]}
+		return None
+	
+	# Вычисляем длину 802.11 заголовка, чтобы понять, где начинается payload.
+	# Сначала считаем базовую длину (FC + Duration + Addr1), потом по флагам и типу докидываем:
+	# - Addr2, Addr3
+	# - Order флаг
+	# - IV (TKIP/CCMP/неизвестно)
+	# - QoS Control
+	# - Fragment/Sequence
+	# Короче, математика от отчаявшегося инженера, который хочет просто payload, но жизнь — боль.
+	@property
+	def return_dot11_length(self):
+		length = 10 # Frame control + Duration/ID + Addr1
+		frame_control = self.return_Dot11_frame_control()
 		
-		if not frag is None and not seq is None:
-			frag_seq = (seq << 4) | frag
-			packet.extend(struct.pack('<H', frag_seq))
+		if frame_control in self.addr2_dot11_frames:
+			length += 6
+		if frame_control in self.addr3_dot11_frames:
+			length += 6
 
-		if fc in [0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8]:
-			packet.extend(struct.pack('<H', QoSControl))
+		frame_control_flags = self.return_dot11_framecontrol_flags()
+		if 7 in frame_control_flags:
+			length += 4 # Order flag
 
-		if not ht_control is None:
-			packet.extend(struct.pack('<I', ht_control))
+		if 6 in frame_control_flags and (frame_control in self.ieee80211_fc_data_types or frame_control in self.ieee80211_fc_qos_data_types):
+			iv = self.return_Dot11_Cipher_IV()
+			if iv in ['ccmp', 'tkip']:
+				length += 8 # TKIP/CCMP IV (protect flag)
+			elif 'wep' in iv:
+				length += 4 # WEP IV
+			else:
+				length += 8 # Unknown (+8 ????)
 
-		if not wep_iv is None:
-			packet.extend(struct.pack('<I', wep_iv))
-
-		if not tkip_iv is None:
-			packet.extend(struct.pack('<Q', tkip_iv))
-
-		if not ccmp_iv is None:
-			packet.extend(struct.pack('<Q', ccmp_iv))
-
-		return bytes(packet)
-
-	def Dot11Beacon(self, timestamp=0, beacon_interval=0.00001, capabilities=0x0000):
-		packet = bytearray()
-		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
-		packet.extend(struct.pack('<Q', timestamp))
-		packet.extend(struct.pack('<H', int(beacon_interval * 1000000 / 1024)))
-		packet.extend(struct.pack('<H', _capabilities))
+		if frame_control in self.ieee80211_fc_qos_data_types:
+			length += 2 # QoS Control
 		
-		return bytes(packet)
+		if frame_control in self.ieee80211_fc_management_types or \
+		frame_control in  self.ieee80211_fc_data_types or \
+		frame_control in  self.ieee80211_fc_qos_data_types:
+			length += 2 # Frament/Sequence
+
+		return length
 	
-	def Dot11Auth(self, algoritm=0, seq=0, status_code=0):
-		packet = bytearray()
-		packet.extend(struct.pack('<H', algoritm))
-		packet.extend(struct.pack('<H', seq))
-		packet.extend(struct.pack('<H', status_code))
-
-		return bytes(packet)
-
-	def Dot11Deauth(self, reason_code=0):
-		packet = bytearray()
-		packet.extend(struct.pack('<H', reason_code))
-
-		return bytes(packet)
-
-	def Dot11Disassoc(self, reason_code=0x0000):
-		packet = bytearray()
-		packet.extend(struct.pack('<H', reason_code))
-
-		return bytes(packet)
-
-	def Dot11AssocReq(self, capabilities=0x0000, listen_interval=0):
-		packet = bytearray()
-		packet.extend(struct.pack('<H', capabilities))
-		packet.extend(struct.pack('<H', listen_interval))
-
-		return bytes(packet)
-
-	def dot11AssocResp(self, capabilities=0x0000, status_code=0x0000, assoc_id=0x0000):
-		packet = bytearray()
-		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
-		packet.extend(struct.pack('<H', _capabilities))
-		packet.extend(struct.pack('<H', status_code))
-		packet.extend(struct.pack('<H', (assoc_id & 0x3FFF)))
-
-		return bytes(packet)
-	
-	def Dot11ReassocReq(self, current_ap, capabilities=0x0000, listen_interval=0):
-		packet = bytearray()
-		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
-		packet.append(struct.pack('<H', _capabilities))
-		packet.append(struct.pack('<H', listen_interval))
-		packet.append(struct.pack('<H6s', self.mac2bin(current_ap)))
-
-		return bytes(packet)
-	
-	def Dot11ReassocResp(self, capabilities=0x0000, status_code=0x0000, assoc_id=0x0000):
-		packet = bytearray()
-		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
-		packet.extend(struct.pack('<H', _capabilities))
-		packet.extend(struct.pack('<H', status_code))
-		packet.extend(struct.pack('<H', (assoc_id & 0x3FFF)))
-
-		return bytes(packet)
+	# О, beacon — визитка точки доступа.
+	# Берём offset от длины заголовка, читаем timestamp, beacon interval (ну почти, ты ж знаешь как), capabilities.
+	# Capabilities раскладываются по битам: "умеет WEP", "поддерживает ESS", "обладает магией".
+	def return_Dot11_Beacon(self):
+		offset = self.return_dot11_length + self.dot11_start
+		pkt = self.pkt[offset:]
+		capabilities = {}
 		
-	def Dot11ProbeReq(self):
-		pass
+		_timestamp = struct.unpack('<Q', pkt[:8])[0]
+		_beacon_inerval = struct.unpack('>e', pkt[8:10])[0] / 10000
+		_capabilities = struct.unpack('<H', pkt[10:12])[0]
+
+		for bit in range(16):
+			if (_capabilities & (1 << bit)):
+				capabilities[bit] = self.ieee80211_capabilities[bit]
+
+		return {
+			'timestamp': _timestamp,
+			'beacon_inerval': f'{_beacon_inerval:06f}',
+			'capabilities': capabilities
+		}
 	
-	def Dot11ProbeResp(self, timestamp=0, beacon_interval=0x0000,  capabilities=None):
-		packet = bytearray()
-		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
-		packet.extend(struct.pack('<Q', timestamp))
-		packet.extend(struct.pack('<H', beacon_interval))
-		packet.extend(struct.pack('<H', _capabilities))
+	# Почти как beacon, только это не точка вещает, а в ответ на "эй, кто тут?".
+	# Структура аналогичная — timestamp, interval, capabilities.
+	# Можно копипастить и никого не осуждать — у тебя же тоже бывают тяжёлые дни.
+	def return_Dot11_ProbeResponse(self):
+		offset = self.return_dot11_length + self.dot11_start
+		pkt = self.pkt[offset:]
+		capabilities = {}
 		
-		return bytes(packet)
+		_timestamp = struct.unpack('<Q', pkt[:8])[0]
+		_beacon_inerval = struct.unpack('>e', pkt[8:10])[0] / 10000
+		_capabilities = struct.unpack('<H', pkt[10:12])[0]
 
-	def Dot11TLV16(self, id, info):
-		packet = bytearray()
-		packet.extend(struct.pack('>H', id))
-		packet.extend(struct.pack('>H', len(info)))
-		packet.extend(info)
+		for bit in range(16):
+			if (_capabilities & (1 << bit)):
+				capabilities[bit] = self.ieee80211_capabilities[bit]
 
-		return bytes(packet)
+		return {
+			'timestamp': _timestamp,
+			'beacon_inerval': f'{_beacon_inerval:06f}',
+			'capabilities': capabilities
+		}
 
-	def Dot11TLV(self, id, info):
-		packet = bytearray()
-		packet.extend(struct.pack('<B', id))
-		packet.extend(struct.pack('<B', len(info)))
-		packet.extend(info)
-	
-		return bytes(packet)
-		
-	def LLC_SNAP(self, oui, control, code):
-		packet = bytearray()
-		packet.extend(b'\xAA\xAA') # LLC / DSAP, SSAP = SNAP
-		packet.extend(struct.pack('>B', control)) # Fucking control, fucking understand 
-		packet.extend(struct.pack('<3s', self.mac2bin(oui)))
-		packet.extend(struct.pack('>H', code))
-
-		return bytes(packet)
-		
-	def EAPOL(self, version, type, length):
-		packet = bytearray()
-		packet.extend(struct.pack('>B', version))
-		packet.extend(struct.pack('>B', type))
-		packet.extend(struct.pack('>H', length))
-
-		return bytes(packet)
-	
-	def EAPOL_HandShake(self, key_desc, key_info, key_len, replay_counter, nonce, iv, rsc, id, mic, wpa_data=None):
-		packet = bytearray()
-		packet.extend(struct.pack('>B', key_desc))
-		packet.extend(struct.pack('>H', key_info))
-		packet.extend(struct.pack('>H', key_len))
-		packet.extend(struct.pack('>Q', replay_counter))
-		packet.extend(struct.pack('>32s', nonce))
-		packet.extend(struct.pack('>16s', iv))
-		packet.extend(struct.pack('>Q', rsc))
-		packet.extend(struct.pack('>Q', id))
-		packet.extend(struct.pack('>16s', mic))
-
-		if wpa_data:
-			wpa_len = len(wpa_data)
-		else:
-			wpa_len = 0
-		packet.extend(struct.pack('>H', wpa_len))
-		
-		if wpa_data:
-			packet.extend(wpa_data)
-
-		return bytes(packet)
-	
-	def EAP(self, code, id, type, data):
-		packet = bytearray()
-		length = 5 + len(data)
-
-		packet.extend(struct.pack('>B', code))
-		packet.extend(struct.pack('>B', id))
-		packet.extend(struct.pack('>H', length))
-		packet.extend(struct.pack('>B', type))
-		packet.extend(data)
-
-		return bytes(packet)
-	
-	def EAP_EXPANDED(self, vendor_id, vendor_type, opcode, flags=0x00):
-		packet = bytearray()
-		packet.extend(struct.pack('>3s', self.mac2bin(vendor_id)))
-		packet.extend(struct.pack('>I', vendor_type))
-		packet.extend(struct.pack('>B', opcode))
-		packet.extend(struct.pack('>B', flags))
-
-		return bytes(packet)
 		

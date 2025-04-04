@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+from scapy.all import rdpcap, Dot11
+import matplotlib.pyplot as plt
+
+# Загрузка PCAP
+packets = rdpcap("8146packets_dump.pcapng")  # <-- вставь сюда свой .pcap файл
+
+nav_intervals = []
+
+for i, pkt in enumerate(packets):
+	if Dot11 in pkt and hasattr(pkt[Dot11], "ID"):
+		tsft = pkt.time * 1_000_000  # Перевод времени в микросекунды
+		duration = pkt[Dot11].ID
+		nav_intervals.append({
+			'index': i,
+			'tsft': tsft,
+			'duration': duration,
+			'type': pkt[Dot11].subtype,
+			'src': pkt[Dot11].addr2,
+		})
+
+# Визуализация
+plt.figure(figsize=(12, 5))
+for nav in nav_intervals:
+	start = nav['tsft']
+	end = nav['tsft'] + nav['duration']
+	plt.plot([start, end], [nav['src'], nav['src']], linewidth=4)
+	plt.text(start, nav['src'], f"{nav['duration']} µs", fontsize=8, va='bottom')
+
+plt.xlabel("Время, µs (TSFT)")
+plt.ylabel("MAC-адрес источника")
+plt.title("NAV временная шкала (Duration/ID по кадрам)")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
