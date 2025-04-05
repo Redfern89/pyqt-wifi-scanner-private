@@ -189,7 +189,6 @@ class IEEE80211_DEFS:
 		21: {'size': 12, 'align': 8}   # Frame_timestamp
 	}
 
-
 	'''
 		IEEE 802.11-2016
 		9.2 MAC frame formats
@@ -451,7 +450,7 @@ class IEEE80211_DEFS:
 	ieee80211_fc_data_types = [0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78]
 	ieee80211_fc_qos_data_types = [0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8]
 
-	addr2_dot11_frames = [
+	addr2_dot11_candidates = [
 			# Management
 			0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 
 			# Control
@@ -459,14 +458,132 @@ class IEEE80211_DEFS:
 			# Data
 			0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8
 			]
-	addr3_dot11_frames = [
+	addr3_dot11_candidates = [
 			# Management
 			0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0,
 			# Data
 			0x08, 0x18, 0x28, 0x38, 0x48, 0x58, 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8
 	]
 	
+	# Frame type: tagged offset
+	ieee80211_elt_candidates = {
+		0x00: 4,   # Association Request
+		0x10: 6,   # Association Response
+		0x40: 0,   # Probe Request
+		0x50: 12,  # Probe Response
+		0x80: 12   # Beacon
+	}
+
+	rsn_cipher_suites = {
+		0x00: "Group",
+		0x01: "WEP-40",
+		0x02: "TKIP",
+		0x03: "WRAP",
+		0x04: "CCMP",
+		0x05: "WEP-104",
+		0x06: "CMAC-128",
+		0x07: "CMAC-128",
+		0x08: "GCMP-128",
+		0x09: "GCMP-256",
+		0x0A: "BIP-GMAC-128",
+		0x0B: "BIP-GMAC-256",
+		0x0C: "BIP-CMAC-128",
+		0x0D: "BIP-CMAC-256"
+	}
+	
+	rsn_akm_suites = {
+		0x01: "802.1X (RSNA)",
+		0x02: "PSK",
+		0x03: "802.1X-FT (Fast Transition)",
+		0x04: "PSK-FT",
+		0x05: "802.1X-PMKSA (PMSK)",
+		0x06: "802.1X-PSK",
+		0x07: "802.1X-TDLS",
+		0x08: "SAE",
+		0x09: "SAE-FT",
+		0x0A: "PSK-SHA256",
+		0x0B: "802.1X-SHA256",
+		0x0C: "SAE-SHA384 (WPA3-Enterprise 192-bit)",
+		0x0D: "802.1X-FT-SHA384"
+	}
+
+	ieee80211_eapol_candidates = [0x08, 0x18, 0x28, 0x38, 0x88, 0x98,0xA8, 0xB8]
+	'''
+		RFC 3748
+		  ╰─> 4. EAP Packet Format
+	'''
+	eap_status_codes = {
+		1: 'Request',
+		2: 'Response',
+		3: 'Success',
+		4: 'Failure'
+	}
+
+	'''
+		RFC 3748
+		  ╰─> 5. Initial EAP Request/Response Types
+	'''
+	eap_type_codes = {
+		1: 'Identity',
+		2: 'Notification',
+		3: 'Nak',
+		4: 'MD5-Challeng',
+		5: 'OTP',
+		6: 'GTC',
+		254: 'Expanded',
+		255: 'Experimental'
+	}
+
 import struct
+
+class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
+	def __init__(self):
+		pass
+
+	def parse_rsn(self, rsn):
+		version = struct.unpack('<H', rsn[0:2])[0]
+		group_cipher = rsn[2:6]
+		group_cipher_oui = group_cipher[0:3]
+		group_cipher_ver = group_cipher[3]
+		pairwise_cnt = rsn[6]
+
+		pairwise_suites = []
+		akm_suites = []
+
+		offset = 8
+		for i in range(pairwise_cnt):
+			pairwise = rsn[offset:offset+4]
+			pairwise_suites.append({
+				'oui': self.mac2str(pairwise[0:3]),
+				'suite': {
+					pairwise[3]: self.rsn_cipher_suites.get(pairwise[3], 0)
+				}
+			})
+			offset += 4
+
+		akm_suites_cnt = rsn[offset]
+		offset += 2
+		for i in range(akm_suites_cnt):
+			akm = rsn[offset:offset+4]
+			akm_suites.append({
+				'oui': self.mac2str(akm[0:3]),
+				'akm': {
+					akm[3]: self.rsn_akm_suites.get(akm[3], 0)
+				}
+			})
+			offset += 4
+
+		return {
+			'version': version,
+			'group_cipher': {
+				'oui': self.mac2str(group_cipher_oui),
+				'group': {
+					group_cipher_ver: self.rsn_cipher_suites.get(group_cipher_ver, 0)
+				}
+			},
+			'pairwise': pairwise_suites,
+			'akm': akm_suites
+		}
 
 # Разложи меня по байтам, если сможешь
 # Тут собраны парсеры IEEE802.11 фреймов
@@ -638,9 +755,9 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			if frame_control in self.ieee80211_fc_types.values():
 				addrs['addr1'] = self.mac2str(pkt[4:10])
 
-				if frame_control in self.addr2_dot11_frames:
+				if frame_control in self.addr2_dot11_candidates:
 					addrs['addr2'] = self.mac2str(pkt[10:16])
-				if frame_control in self.addr3_dot11_frames:
+				if frame_control in self.addr3_dot11_candidates:
 					addrs['addr3'] = self.mac2str(pkt[16:22])
 				return addrs
 
@@ -662,7 +779,7 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 				frame_control in  self.ieee80211_fc_qos_data_types:
 				
 				pkt = self.pkt[self.dot11_start:]
-				if frame_control in self.addr3_dot11_frames:
+				if frame_control in self.addr3_dot11_candidates:
 					frag_seq = int.from_bytes(pkt[22:24], 'little')
 					frag = frag_seq & 0x0f
 					seq = (frag_seq >> 4)
@@ -685,10 +802,11 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 		if frame_control in self.ieee80211_fc_qos_data_types:
 			offset += 2 # QoS Control field
 
+		# Cipher IV содержат только Data/QoS Data фреймы
 		if frame_control in self.ieee80211_fc_data_types or frame_control in self.ieee80211_fc_qos_data_types:
 			if 6 in frame_control_flags:
 				iv = self.pkt[offset:offset+8]
-
+				# Далее пойдет код - спизженный с Wireshark (ну не совсем, он на C написан)
 				if iv[3] & 0x20:
 					if iv[1] == ((iv[0] | 0x20) & 0x7f):
 						return {'tkip': iv}
@@ -696,6 +814,7 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 						return {'ccmp': iv}
 				else:
 					return {'wep': iv[:4]}
+				# / Конец спизженного кода /
 		return None
 	
 	# Вычисляем длину 802.11 заголовка, чтобы понять, где начинается payload.
@@ -711,15 +830,15 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 		length = 10 # Frame control + Duration/ID + Addr1
 		frame_control = self.return_Dot11_frame_control()
 		
-		if frame_control in self.addr2_dot11_frames:
+		if frame_control in self.addr2_dot11_candidates:
 			length += 6
-		if frame_control in self.addr3_dot11_frames:
+		if frame_control in self.addr3_dot11_candidates:
 			length += 6
 
 		frame_control_flags = self.return_dot11_framecontrol_flags()
 		if 7 in frame_control_flags:
 			length += 4 # Order flag
-
+		
 		if 6 in frame_control_flags and (frame_control in self.ieee80211_fc_data_types or frame_control in self.ieee80211_fc_qos_data_types):
 			iv = self.return_Dot11_Cipher_IV()
 			if iv in ['ccmp', 'tkip']:
@@ -727,7 +846,7 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			elif 'wep' in iv:
 				length += 4 # WEP IV
 			else:
-				length += 8 # Unknown (+8 ????)
+				length += 8 # Unknown (+8 ????) да я не ебу, что тут может быть еще, но и норм так
 
 		if frame_control in self.ieee80211_fc_qos_data_types:
 			length += 2 # QoS Control
@@ -742,7 +861,10 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 	# О, beacon — визитка точки доступа.
 	# Берём offset от длины заголовка, читаем timestamp, beacon interval (ну почти, ты ж знаешь как), capabilities.
 	# Capabilities раскладываются по битам: "умеет WEP", "поддерживает ESS", "обладает магией".
-	def return_Dot11_Beacon(self):
+	def return_Dot11_Beacon_ProbeResponse(self):
+		if self.return_Dot11_frame_control() not in [0x50, 0x80]:
+			return
+		
 		offset = self.return_dot11_length + self.dot11_start
 		pkt = self.pkt[offset:]
 		capabilities = {}
@@ -759,28 +881,462 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			'timestamp': _timestamp,
 			'beacon_inerval': f'{_beacon_inerval:06f}',
 			'capabilities': capabilities
+		}
+
+	# Возвращает запрос ассоциации с точкой доступа
+	# Ничего осбо интересного, но пусть будет
+	def return_Dot11_AssocRequest(self):
+		if self.return_Dot11_frame_control() != 0x00:
+			return
+		
+		offset = self.return_dot11_length + self.dot11_start
+		pkt = self.pkt[offset:]
+		capabilities = {}
+		_capabilities = struct.unpack('<H', pkt[0:2])[0]
+		listen_interval = struct.unpack('<H', pkt[2:4])[0]
+
+		for bit in range(16):
+			if (_capabilities & (1 << bit)):
+				capabilities[bit] = self.ieee80211_capabilities[bit]		
+	
+		return {
+			'listen_interval': listen_interval,
+			'capabilities': capabilities
+		}
+
+	# Возрат ответа на запрос ассоциации
+	def return_Dot11_AssocResponse(self):
+		if self.return_Dot11_frame_control() != 0x10:
+			return
+
+		offset = self.return_dot11_length + self.dot11_start
+		pkt = self.pkt[offset:]
+		capabilities = {}
+		_capabilities = struct.unpack('<H', pkt[0:2])[0]
+		status_code = struct.unpack('<H', pkt[2:4])[0]
+		assoc_id = struct.unpack('<H', pkt[4:6])[0] & 0x3FFF
+
+		for bit in range(16):
+			if (_capabilities & (1 << bit)):
+				capabilities[bit] = self.ieee80211_capabilities[bit]
+
+		return {
+			'capabilities': capabilities,
+			'status': {
+				status_code: self.ieee80211_status_codes.get(status_code, 0)
+			},
+			'assoc_id': assoc_id
 		}
 	
-	# Почти как beacon, только это не точка вещает, а в ответ на "эй, кто тут?".
-	# Структура аналогичная — timestamp, interval, capabilities.
-	# Можно копипастить и никого не осуждать — у тебя же тоже бывают тяжёлые дни.
-	def return_Dot11_ProbeResponse(self):
+	def return_Dot11Auth(self):
+		if self.return_Dot11_frame_control() != 0xB0:
+			return
+
 		offset = self.return_dot11_length + self.dot11_start
 		pkt = self.pkt[offset:]
-		capabilities = {}
-		
-		_timestamp = struct.unpack('<Q', pkt[:8])[0]
-		_beacon_inerval = struct.unpack('>e', pkt[8:10])[0] / 10000
-		_capabilities = struct.unpack('<H', pkt[10:12])[0]
 
-		for bit in range(16):
-			if (_capabilities & (1 << bit)):
-				capabilities[bit] = self.ieee80211_capabilities[bit]
+		algoritm = struct.unpack('<H', pkt[0:2])[0]
+		seq = struct.unpack('<H', pkt[2:4])[0]
+		status_code = struct.unpack('<H', pkt[4:6])[0] & 0x3FFF		
 
 		return {
-			'timestamp': _timestamp,
-			'beacon_inerval': f'{_beacon_inerval:06f}',
-			'capabilities': capabilities
+			'algoritm': {
+				algoritm: self.ieee80211_authentication_algoritms.get(algoritm, 0)
+			},
+			'seq': seq,
+			'status': {
+				status_code: self.ieee80211_status_codes.get(status_code, 0)
+			}
 		}
 
+	def return_Dot11_Deauth(self):
+		if self.return_Dot11_frame_control() != 0xC0:
+			return
+
+		offset = self.return_dot11_length + self.dot11_start
+		pkt = self.pkt[offset:]
+		reason_code = struct.unpack('<H', pkt[0:2])[0]
+
+		return {
+			'reason': {
+				reason_code: self.ieee80211_reason_codes.get(reason_code, 0)
+			}
+		}	
+
+	# С разбром этого даже мамкин хакер справится, учитвая, что осталось позади...
+	# тут есть SSID, Vendor'ы и прочее. да их разбор - самый простой, это тупо TLV
+	def return_Dot11Elt(self):
+		# получаем тип фрейма
+		frame_control = self.return_Dot11_frame_control()
+		# Если фрейм соответствует - начинаем разбор
+		if frame_control in self.ieee80211_elt_candidates:
+			# Пропускам RadioTap, Dot11, Fixed paramters
+			offset = self.dot11_start + self.return_dot11_length + self.ieee80211_elt_candidates[frame_control]
+			# Узнаем новый размер пакета
+			packet_length = len(self.pkt[offset:])
+			result = {}
+
+			# Проверяем - есть ли контрольная сумма FCS (4 байта) в конце пакета
+			rt_flags = self.return_RadioTap_PresentFlag('Flags')
+			if rt_flags:
+				if 4 in rt_flags:
+					# Если есть - срезаем размер на эти 4 байта
+					packet_length -= 4
+
+			# Обреаем пакет до ELT (tagged parameters)
+			pkt = self.pkt[offset:offset + packet_length]
+			
+			# Перемещаем указатель в начало пакета
+			offset = 0
+			# Читаем пока указатель не прировняется к размеру пакета
+			while (offset + 2 <= packet_length):
+				ID = pkt[offset]
+				LEN = pkt[offset+1]
+				INFO = pkt[offset+2:offset+2+LEN]
+				result[ID] = INFO
+				offset += 2 + LEN
+			return result
+			# Честно сказать, я еще не решил, что делать, если что-то не так пойдет
+			# К примеру если останестчя лишний байт или два (а почему бы нет?) в ко
+			# це пакета данных. Этот цикл может стать вечным. Хотя на PHY-уровне др
+			# айвер отбрасывает битые пакеты. Но хзхзхзхз.
+
+		return None
+	
+	def return_Dot11_EAPOL(self):
+		fc = self.return_Dot11_frame_control()
+		flags = self.return_dot11_framecontrol_flags()
+
+		if not fc in self.ieee80211_eapol_candidates:
+			return
+		
+		if 6 in flags:
+			return
+		
+		offset = self.return_dot11_length + self.dot11_start
+		pkt = self.pkt[offset:]
+		if pkt[:3] == b'\xaa\xaa\x03': # LLS / DSAP, SSAP = SNAP, Control = UI
+			llc = pkt[:3]
+			llc_oui = pkt[3:6]
+			ptype = pkt[6:8]
+			
+			if ptype == b'\x88\x8e': # 802.1x auth type
+				eapol_pkt = pkt[8:]
+				eapol_version = eapol_pkt[0]
+				eapol_type = eapol_pkt[1]
+				eapol_length = struct.unpack('>H', eapol_pkt[2:4])[0]
+				eapol_data = eapol_pkt[4:4+eapol_length]
+				
+				return {
+					'llc': {
+						'info': llc,
+						'oui': llc_oui,
+						'proto': ptype
+					},
+					
+					'version': eapol_version,
+					'type': eapol_type,
+					'length': eapol_length,
+					'data': eapol_data
+				}
+
+		return None
+	
+	def return_EAPOL_Handshake(self):
+		eapol = self.return_Dot11_EAPOL()
+		if eapol:
+			if eapol.get('type', None) == 3:
+				eapol_info = eapol.get('data', None)
+				if eapol_info:
+					wpa_len = struct.unpack('>H', eapol_info[93:95])[0]
+					return {
+						'desc': eapol_info[0],
+						'info': eapol_info[1:3],
+						'length': struct.unpack('>H', eapol_info[3:5])[0],
+						'replay_counter': struct.unpack('>Q', eapol_info[5:13])[0],
+						'nonce': eapol_info[13:45],
+						'iv': eapol_info[45:61],
+						'rsc': eapol_info[61:69],
+						'id': eapol_info[69:77],
+						'mic': eapol_info[77:93],
+						'wpa_len': wpa_len,
+						'wpa_key': eapol_info[95:95+wpa_len] if wpa_len else None
+					}
+	
+		return None
+	
+	def return_EAPOL_EAP(self):
+		eapol = self.return_Dot11_EAPOL()
+		if eapol:
+			if eapol.get('type', None) == 0:
+				eap_pkt = eapol.get('data', None)
+				if eap_pkt:
+					eap_code = eap_pkt[0]
+					eap_id = eap_pkt[1]
+					eap_length = struct.unpack('<H', eap_pkt[1:3])[0]
+					eap_type = eap_pkt[4]
+					payload = eap_pkt[5:]
+
+					return {
+						'code': {
+							eap_code: self.eap_status_codes.get(eap_code, 0)
+						},
+						'id': eap_id,
+						'length': eap_length,
+						'type': {
+							eap_type: self.eap_type_codes.get(eap_type, 0)
+						},
+						'payload': payload
+					}
+		return None
+				
+
+######################
+#   PacketBuilder    #
+######################
+class PacketBuilder(IEEE80211_DEFS, IEEE80211_Utils):
+	def __init__(self):
+		pass
+	
+	def RadioTap_Channel(self, channel, flags=None):
+		if flags:
+			flags = self.makeFlagsField(self.ieee80211_radiotap_channel_flags_names, flags)
+		else:
+			flags = 0x0000;
+		
+		return int.from_bytes(struct.pack('<HH', channel, flags), 'little')
+
+	def RadioTap(self, it_pad=0x00, it_presents=None):
+		packet = bytearray()
+		presents = bytearray()
+		
+		# RadioTap header - Version (0x00), Padding, Length, Presents (to many)
+		packet.extend(struct.pack('<BB', 0x00, it_pad))
+		_it_presents = 0x00000000
+		
+		if it_presents:
+			offset = 8
+
+			for present, _ in it_presents.items():
+				present_index = self.getKeyByVal(self.ieee80211_radiotap_presents_names, present)
+				if present_index:
+					_it_presents |= (1 << present_index)
+
+			for bit in range(16):
+				if (_it_presents & (1 << bit)):
+					present_chunk = bytearray()
+					name = self.ieee80211_radiotap_presents_names.get(bit, None)
+					value = it_presents.get(name)
+					
+					sa = self.ieee80211_radiotap_presents_sizes_aligns[bit]
+					align = sa.get('align', 1)
+					size = sa.get('size', 1)
+
+					# Fucked stupid agliements blyatt
+					if offset % align != 0:
+						padding = align - (offset % align)
+						present_chunk.extend(b'\x00' * padding)
+						offset += padding
+					# 1: 'b' if signed else 'B', 2: 'h' if signed else 'H', 4: 'i' if signed else 'I', 8: 'q' if signed else 'Q'
+					fmt = self.get_struct_format(size, signed=value < 0)
+					present_chunk.extend(struct.pack(f'<{fmt}', value))
+					offset += size
+					presents.extend(bytes(present_chunk))
+
+		it_len = len(presents) + 8
+		packet.extend(struct.pack('<H', it_len))
+		packet.extend(struct.pack('<I', _it_presents))
+		packet.extend(bytes(presents))
+
+		return bytes(packet)
+
+
+	def Dot11(self, fc, addr1, addr2=None, addr3=None, addr4=None, duration=0, frag=None, seq=None, fcflags=None, QoSControl=0x00, wep_iv=None, tkip_iv=None, ccmp_iv=None, ht_control=None):
+		duration = (duration >> 1) & 0x7FFF
+		packet = bytearray()
+		flags = 0x00
+
+		if fcflags:
+			flags = self.makeFlagsField(self.ieee80211_fc_flags, fcflags)
+
+		packet.extend(struct.pack('<BBH6s', fc, flags, duration, self.mac2bin(addr1)))
+		if addr2:
+			packet.extend(struct.pack('<6s', self.mac2bin(addr2)))
+		if addr3:
+			packet.extend(struct.pack('<6s', self.mac2bin(addr3)))
+		if addr4:
+			packet.extend(struct.pack('<6s', self.mac2bin(addr4)))
+		
+		if not frag is None and not seq is None:
+			frag_seq = (seq << 4) | frag
+			packet.extend(struct.pack('<H', frag_seq))
+
+		if fc in [0x88, 0x98, 0xA8, 0xB8, 0xC8, 0xE8, 0xF8]:
+			packet.extend(struct.pack('<H', QoSControl))
+
+		if not ht_control is None:
+			packet.extend(struct.pack('<I', ht_control))
+
+		if not wep_iv is None:
+			packet.extend(struct.pack('<I', wep_iv))
+
+		if not tkip_iv is None:
+			packet.extend(struct.pack('<Q', tkip_iv))
+
+		if not ccmp_iv is None:
+			packet.extend(struct.pack('<Q', ccmp_iv))
+
+		return bytes(packet)
+
+	def Dot11Beacon(self, timestamp=0, beacon_interval=0.00001, capabilities=0x0000):
+		packet = bytearray()
+		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
+		packet.extend(struct.pack('<Q', timestamp))
+		packet.extend(struct.pack('<H', int(beacon_interval * 1000000 / 1024)))
+		packet.extend(struct.pack('<H', _capabilities))
+		
+		return bytes(packet)
+	
+	def Dot11Auth(self, algoritm=0, seq=0, status_code=0):
+		packet = bytearray()
+		packet.extend(struct.pack('<H', algoritm))
+		packet.extend(struct.pack('<H', seq))
+		packet.extend(struct.pack('<H', status_code))
+
+		return bytes(packet)
+
+	def Dot11Deauth(self, reason_code=0):
+		packet = bytearray()
+		packet.extend(struct.pack('<H', reason_code))
+
+		return bytes(packet)
+
+	def Dot11Disassoc(self, reason_code=0x0000):
+		packet = bytearray()
+		packet.extend(struct.pack('<H', reason_code))
+
+		return bytes(packet)
+
+	def Dot11AssocReq(self, capabilities=0x0000, listen_interval=0):
+		packet = bytearray()
+		packet.extend(struct.pack('<H', capabilities))
+		packet.extend(struct.pack('<H', listen_interval))
+
+		return bytes(packet)
+
+	def dot11AssocResp(self, capabilities=0x0000, status_code=0x0000, assoc_id=0x0000):
+		packet = bytearray()
+		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
+		packet.extend(struct.pack('<H', _capabilities))
+		packet.extend(struct.pack('<H', status_code))
+		packet.extend(struct.pack('<H', (assoc_id & 0x3FFF)))
+
+		return bytes(packet)
+	
+	def Dot11ReassocReq(self, current_ap, capabilities=0x0000, listen_interval=0):
+		packet = bytearray()
+		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
+		packet.append(struct.pack('<H', _capabilities))
+		packet.append(struct.pack('<H', listen_interval))
+		packet.append(struct.pack('<H6s', self.mac2bin(current_ap)))
+
+		return bytes(packet)
+	
+	def Dot11ReassocResp(self, capabilities=0x0000, status_code=0x0000, assoc_id=0x0000):
+		packet = bytearray()
+		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
+		packet.extend(struct.pack('<H', _capabilities))
+		packet.extend(struct.pack('<H', status_code))
+		packet.extend(struct.pack('<H', (assoc_id & 0x3FFF)))
+
+		return bytes(packet)
+		
+	def Dot11ProbeReq(self):
+		pass
+	
+	def Dot11ProbeResp(self, timestamp=0, beacon_interval=0x0000,  capabilities=None):
+		packet = bytearray()
+		_capabilities = self.makeFlagsField(self.ieee80211_capabilities, capabilities)
+		packet.extend(struct.pack('<Q', timestamp))
+		packet.extend(struct.pack('<H', beacon_interval))
+		packet.extend(struct.pack('<H', _capabilities))
+		
+		return bytes(packet)
+
+	def Dot11TLV16(self, id, info):
+		packet = bytearray()
+		packet.extend(struct.pack('>H', id))
+		packet.extend(struct.pack('>H', len(info)))
+		packet.extend(info)
+
+		return bytes(packet)
+
+	def Dot11TLV(self, id, info):
+		packet = bytearray()
+		packet.extend(struct.pack('<B', id))
+		packet.extend(struct.pack('<B', len(info)))
+		packet.extend(info)
+	
+		return bytes(packet)
+		
+	def LLC_SNAP(self, oui, control, code):
+		packet = bytearray()
+		packet.extend(b'\xAA\xAA') # LLC / DSAP, SSAP = SNAP
+		packet.extend(struct.pack('>B', control)) # Fucking control, fucking understand 
+		packet.extend(struct.pack('<3s', self.mac2bin(oui)))
+		packet.extend(struct.pack('>H', code))
+
+		return bytes(packet)
+		
+	def EAPOL(self, version, type, length):
+		packet = bytearray()
+		packet.extend(struct.pack('>B', version))
+		packet.extend(struct.pack('>B', type))
+		packet.extend(struct.pack('>H', length))
+
+		return bytes(packet)
+	
+	def EAPOL_HandShake(self, key_desc, key_info, key_len, replay_counter, nonce, iv, rsc, id, mic, wpa_data=None):
+		packet = bytearray()
+		packet.extend(struct.pack('>B', key_desc))
+		packet.extend(struct.pack('>H', key_info))
+		packet.extend(struct.pack('>H', key_len))
+		packet.extend(struct.pack('>Q', replay_counter))
+		packet.extend(struct.pack('>32s', nonce))
+		packet.extend(struct.pack('>16s', iv))
+		packet.extend(struct.pack('>Q', rsc))
+		packet.extend(struct.pack('>Q', id))
+		packet.extend(struct.pack('>16s', mic))
+
+		if wpa_data:
+			wpa_len = len(wpa_data)
+		else:
+			wpa_len = 0
+		packet.extend(struct.pack('>H', wpa_len))
+		
+		if wpa_data:
+			packet.extend(wpa_data)
+
+		return bytes(packet)
+	
+	def EAP(self, code, id, type, data):
+		packet = bytearray()
+		length = 5 + len(data)
+
+		packet.extend(struct.pack('>B', code))
+		packet.extend(struct.pack('>B', id))
+		packet.extend(struct.pack('>H', length))
+		packet.extend(struct.pack('>B', type))
+		packet.extend(data)
+
+		return bytes(packet)
+	
+	def EAP_EXPANDED(self, vendor_id, vendor_type, opcode, flags=0x00):
+		packet = bytearray()
+		packet.extend(struct.pack('>3s', self.mac2bin(vendor_id)))
+		packet.extend(struct.pack('>I', vendor_type))
+		packet.extend(struct.pack('>B', opcode))
+		packet.extend(struct.pack('>B', flags))
+
+		return bytes(packet)
 		
