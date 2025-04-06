@@ -1290,7 +1290,7 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 				ID = pkt[offset]
 				LEN = pkt[offset+1]
 				INFO = pkt[offset+2:offset+2+LEN]
-				result[ID] = INFO
+				result[self.elt_tags_struct.get(ID, 0)] = INFO
 				offset += 2 + LEN
 			return result
 			# Честно сказать, я еще не решил, что делать, если что-то не так пойдет
@@ -1312,12 +1312,14 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 		
 		offset = self.return_dot11_length + self.dot11_start
 		pkt = self.pkt[offset:]
-		if pkt[:3] == b'\xaa\xaa\x03': # LLS / DSAP, SSAP = SNAP, Control = UI
+		# Помощь пришла пришла - от куда не ждал, Настёне отдельная благодарность
+		# LLC / SNAP Header IE
+		if pkt[:3] == b'\xaa\xaa\x03': # LLC / DSAP, SSAP = SNAP, Control = UI
 			llc = pkt[:3]
 			llc_oui = pkt[3:6]
 			ptype = pkt[6:8]
 			
-			if ptype == b'\x88\x8e': # 802.1x auth type
+			if ptype == b'\x88\x8e': # 802.1x auth type (EAPOL)
 				eapol_pkt = pkt[8:]
 				eapol_version = eapol_pkt[0]
 				eapol_type = eapol_pkt[1]

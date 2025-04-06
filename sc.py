@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from scapy.all import *
+#from scapy.all import *
 from dot11 import Dot11Parser, Dot11EltParsers
 
 pkt_epol = \
@@ -107,10 +107,10 @@ eap_indetity = \
 
 
 dp = Dot11Parser(beacon_frame)
-b = dp.return_Dot11Elt().get(48)
-r = Dot11EltParsers()
+b = dp.return_Dot11Elt()#.get(48)
+#r = Dot11EltParsers()
 	
-print(r.parse_rsn(b))
+print(b)
 
 
 #print(dp.return_RadioTap_PresentsFlags())
