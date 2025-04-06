@@ -527,11 +527,308 @@ class IEEE80211_DEFS:
 		1: 'Identity',
 		2: 'Notification',
 		3: 'Nak',
-		4: 'MD5-Challeng',
+		4: 'MD5-Challenge',
 		5: 'OTP',
 		6: 'GTC',
 		254: 'Expanded',
 		255: 'Experimental'
+	}
+
+	elt_tags_struct = {
+		0: 'SSID',
+		1: 'SUPP_RATES',
+		2: 'FH_PARAMETER',
+		3: 'DS_PARAMETER',
+		4: 'CF_PARAMETER',
+		5: 'TIM',
+		6: 'IBSS_PARAMETER',
+		7: 'COUNTRY_INFO',
+		8: 'FH_HOPPING_PARAMETER',
+		9: 'FH_HOPPING_TABLE',
+		10: 'REQUEST',
+		11: 'QBSS_LOAD',
+		12: 'EDCA_PARAM_SET',
+		13: 'TSPEC',
+		14: 'TCLAS',
+		15: 'SCHEDULE',
+		16: 'CHALLENGE_TEXT',
+		32: 'POWER_CONSTRAINT',
+		33: 'POWER_CAPABILITY',
+		34: 'TPC_REQUEST',
+		35: 'TPC_REPORT',
+		36: 'SUPPORTED_CHANNELS',
+		37: 'CHANNEL_SWITCH_ANN',
+		38: 'MEASURE_REQ',
+		39: 'MEASURE_REP',
+		40: 'QUIET',
+		41: 'IBSS_DFS',
+		42: 'ERP_INFO',
+		43: 'TS_DELAY',
+		44: 'TCLAS_PROCESS',
+		45: 'HT_CAPABILITY',
+		46: 'QOS_CAPABILITY',
+		47: 'ERP_INFO_OLD',
+		48: 'RSN_IE',
+		50: 'EXT_SUPP_RATES',
+		51: 'AP_CHANNEL_REPORT',
+		52: 'NEIGHBOR_REPORT',
+		53: 'RCPI',
+		54: 'MOBILITY_DOMAIN',
+		55: 'FAST_BSS_TRANSITION',
+		56: 'TIMEOUT_INTERVAL',
+		57: 'RIC_DATA',
+		58: 'DSE_REG_LOCATION',
+		59: 'SUPPORTED_OPERATING_CLASSES',
+		60: 'EXTENDED_CHANNEL_SWITCH_ANNOUNCEMENT',
+		61: 'HT_OPERATION',
+		62: 'SECONDARY_CHANNEL_OFFSET',
+		63: 'BSS_AVG_ACCESS_DELAY',
+		64: 'ANTENNA',
+		65: 'RSNI',
+		66: 'MEASURE_PILOT_TRANS',
+		67: 'BSS_AVB_ADM_CAPACITY',
+		68: 'IE_68_CONFLICT',
+		68: 'WAPI_PARAM_SET',
+		68: 'BSS_AC_ACCESS_DELAY',
+		69: 'TIME_ADV',
+		70: 'RM_ENABLED_CAPABILITY',
+		71: 'MULTIPLE_BSSID',
+		72: '20_40_BSS_CO_EX',
+		73: '20_40_BSS_INTOL_CH_REP',
+		74: 'OVERLAP_BSS_SCAN_PAR',
+		75: 'RIC_DESCRIPTOR',
+		76: 'MMIE',
+		78: 'EVENT_REQUEST',
+		79: 'EVENT_REPORT',
+		80: 'DIAGNOSTIC_REQUEST',
+		81: 'DIAGNOSTIC_REPORT',
+		82: 'LOCATION_PARAMETERS',
+		83: 'NO_BSSID_CAPABILITY',
+		84: 'SSID_LIST',
+		85: 'MULTIPLE_BSSID_INDEX',
+		86: 'FMS_DESCRIPTOR',
+		87: 'FMS_REQUEST',
+		88: 'FMS_RESPONSE',
+		89: 'QOS_TRAFFIC_CAPABILITY',
+		90: 'BSS_MAX_IDLE_PERIOD',
+		91: 'TFS_REQUEST',
+		92: 'TFS_RESPONSE',
+		93: 'WNM_SLEEP_MODE',
+		94: 'TIM_BROADCAST_REQUEST',
+		95: 'TIM_BROADCAST_RESPONSE',
+		96: 'COLLOCATED_INTER_REPORT',
+		97: 'CHANNEL_USAGE',
+		98: 'TIME_ZONE',
+		99: 'DMS_REQUEST',
+		100: 'DMS_RESPONSE',
+		101: 'LINK_IDENTIFIER',
+		102: 'WAKEUP_SCHEDULE',
+		104: 'CHANNEL_SWITCH_TIMING',
+		105: 'PTI_CONTROL',
+		106: 'PU_BUFFER_STATUS',
+		107: 'INTERWORKING',
+		108: 'ADVERTISEMENT_PROTOCOL',
+		109: 'EXPIDITED_BANDWIDTH_REQ',
+		110: 'QOS_MAP_SET',
+		111: 'ROAMING_CONSORTIUM',
+		112: 'EMERGENCY_ALERT_ID',
+		113: 'MESH_CONFIGURATION',
+		114: 'MESH_ID',
+		115: 'MESH_LINK_METRIC_REPORT',
+		116: 'CONGESTION_NOTIFICATION',
+		117: 'MESH_PEERING_MGMT',
+		118: 'MESH_CHANNEL_SWITCH',
+		119: 'MESH_AWAKE_WINDOW',
+		120: 'BEACON_TIMING',
+		121: 'MCCAOP_SETUP_REQUEST',
+		122: 'MCCAOP_SETUP_REPLY',
+		123: 'MCCAOP_ADVERTISEMENT',
+		124: 'MCCAOP_TEARDOWN',
+		125: 'GANN',
+		126: 'RANN',
+		127: 'EXTENDED_CAPABILITIES',
+		128: 'AGERE_PROPRIETARY',
+		130: 'MESH_PREQ',
+		131: 'MESH_PREP',
+		132: 'MESH_PERR',
+		133: 'CISCO_CCX1_CKIP',
+		136: 'CISCO_CCX2',
+		137: 'PXU',
+		138: 'PXUC',
+		139: 'AUTH_MESH_PEERING_EXCH',
+		140: 'MIC',
+		141: 'DESTINATION_URI',
+		142: 'U_APSD_COEX',
+		143: 'WAKEUP_SCHEDULE_AD',
+		144: 'EXTENDED_SCHEDULE',
+		145: 'STA_AVAILABILITY',
+		146: 'DMG_TSPEC',
+		147: 'NEXT_DMG_ATI',
+		148: 'DMG_CAPABILITIES',
+		149: 'CISCO_CCX3',
+		150: 'CISCO_VENDOR_SPECIFIC',
+		151: 'DMG_OPERATION',
+		152: 'DMG_BSS_PARAMETER_CHANGE',
+		153: 'DMG_BEAM_REFINEMENT',
+		154: 'CHANNEL_MEASURMENT_FB',
+		157: 'AWAKE_WINDOW',
+		158: 'MULTI_BAND',
+		159: 'ADDBA_EXT',
+		160: 'NEXTPCP_LIST',
+		161: 'PCP_HANDOVER',
+		162: 'DMG_LINK_MARGIN',
+		163: 'SWITCHING_STREAM',
+		164: 'SESSION_TRANSMISSION',
+		165: 'DYN_TONE_PAIR_REP',
+		166: 'CLUSTER_REP',
+		167: 'RELAY_CAPABILITIES',
+		168: 'RELAY_TRANSFER_PARAM',
+		169: 'BEAMLINK_MAINTENANCE',
+		170: 'MULTIPLE_MAC_SUBLAYERS',
+		171: 'U_PID',
+		172: 'DMG_LINK_ADAPTION_ACK',
+		173: 'SYMBOL_PROPRIETARY',
+		174: 'MCCAOP_ADVERTISEMENT_OV',
+		175: 'QUIET_PERIOD_REQ',
+		177: 'QUIET_PERIOD_RES',
+		182: 'ECAPC_POLICY',
+		183: 'CLUSTER_TIME_OFFSET',
+		184: 'INTRA_ACCESS_CAT_PRIO',
+		185: 'SCS_DESCRIPTOR',
+		190: 'ANTENNA_SECTOR_ID',
+		191: 'VHT_CAPABILITY',
+		192: 'VHT_OPERATION',
+		193: 'EXT_BSS_LOAD',
+		194: 'WIDE_BW_CHANNEL_SWITCH',
+		195: 'TX_PWR_ENVELOPE',
+		196: 'CHANNEL_SWITCH_WRAPPER',
+		199: 'OPERATING_MODE_NOTIFICATION',
+		201: 'REDUCED_NEIGHBOR_REPORT',
+		206: 'FINE_TIME_MEASUREMENT_PARAM',
+		207: 'S1G_OPEN_LOOP_LINK_MARGIN_INDEX',
+		208: 'RPS',
+		209: 'PAGE_SLICE',
+		210: 'AID_REQUEST',
+		211: 'AID_RESPONSE',
+		212: 'S1G_SECTOR_OPERATION',
+		213: 'S1G_BEACON_COMPATIBILITY',
+		214: 'SHORT_BEACON_INTERVAL',
+		215: 'CHANGE_SEQUENCE',
+		216: 'TWT',
+		217: 'S1G_CAPABILITIES',
+		220: 'SUBCHANNEL_SELECTIVE_TRANSMISSION',
+		221: 'VENDOR_SPECIFIC_IE',
+		222: 'AUTHENTICATION_CONTROL',
+		223: 'TSF_TIMER_ACCURACY',
+		224: 'S1G_RELAY',
+		225: 'REACHABLE_ADDRESS',
+		226: 'S1G_RELAY_DISCOVERY',
+		228: 'AID_ANNOUNCEMENT',
+		229: 'PV1_PROBE_RESPONSE_OPTION',
+		230: 'EL_OPERATION',
+		231: 'SECTORIZED_GROUP_ID_LIST',
+		232: 'S1G_OPERATION',
+		233: 'HEADER_COMPRESSION',
+		234: 'SST_OPERATION',
+		235: 'MAD',
+		236: 'S1G_RELAY_ACTIVATION',
+		237: 'CAG_NUMBER',
+		239: 'AP_CSN',
+		240: 'FILS_INDICATION',
+		241: 'DIFF_INITIAL_LINK_SETUP',
+		242: 'FRAGMENT',
+		244: 'RSNX',
+		255: 'ELEMENT_ID_EXTENSION'
+	}
+
+	wps_tlv_struct = {
+		0x1001: 'AP_CHANNEL',                         # AP Channel
+		0x1002: 'ASSOCIATION_STATE',                  # Association State
+		0x1003: 'AUTHENTICATION_TYPE',                # Authentication Type
+		0x1004: 'AUTHENTICATION_TYPE_FLAGS',          # Authentication Type Flags
+		0x1005: 'AUTHENTICATOR',                      # Authenticator
+		0x1008: 'CONFIG_METHODS',                     # Config Methods
+		0x1009: 'CONFIGURATION_ERROR',                # Configuration Error
+		0x100a: 'CONFIRMATION_URL4',                  # Confirmation URL4
+		0x100b: 'CONFIRMATION_URL6',                  # Confirmation URL6
+		0x100c: 'CONNECTION_TYPE',                    # Connection Type
+		0x100d: 'CONNECTION_TYPE_FLAGS',              # Connection Type Flags
+		0x100e: 'CREDENTIAL',                         # Credential
+		0x1011: 'DEVICE_NAME',                        # Device Name
+		0x1012: 'DEVICE_PASSWORD_ID',                 # Device Password ID
+		0x1014: 'E_HASH1',                            # E Hash1
+		0x1015: 'E_HASH2',                            # E Hash2
+		0x1016: 'E_SNONCE1',                          # E SNonce1
+		0x1017: 'E_SNONCE2',                          # E SNonce2
+		0x1018: 'ENCRYPTED_SETTINGS',                 # Encrypted Settings
+		0x100f: 'ENCRYPTION_TYPE',                    # Encryption Type
+		0x1010: 'ENCRYPTION_TYPE_FLAGS',              # Encryption Type Flags
+		0x101a: 'ENROLLEE_NONCE',                     # Enrollee Nonce
+		0x101b: 'FEATURE_ID',                         # Feature Id
+		0x101c: 'IDENTITY',                           # Identity
+		0x101d: 'IDENTITY_PROOF',                     # Identity Proof
+		0x101e: 'KEY_WRAP_AUTHENTICATOR',             # Key Wrap Authenticator
+		0x101f: 'KEY_IDENTIFIER',                     # Key Identifier
+		0x1020: 'MAC_ADDRESS',                        # MAC Address
+		0x1021: 'MANUFACTURER',                       # Manufacturer
+		0x1022: 'MESSAGE_TYPE',                       # Message Type
+		0x1023: 'MODEL_NAME',                         # Model Name
+		0x1024: 'MODEL_NUMBER',                       # Model Number
+		0x1026: 'NETWORK_INDEX',                      # Network Index
+		0x1027: 'NETWORK_KEY',                        # Network Key
+		0x1028: 'NETWORK_KEY_INDEX',                  # Network Key Index
+		0x1029: 'NEW_DEVICE_NAME',                    # New Device Name
+		0x102a: 'NEW_PASSWORD',                       # New Password
+		0x102c: 'OOB_DEVICE_PASSWORD',                # OOB Device Password
+		0x102d: 'OS_VERSION',                         # OS Version
+		0x102f: 'POWER_LEVEL',                        # Power Level
+		0x1030: 'PSK_CURRENT',                        # PSK Current
+		0x1031: 'PSK_MAX',                            # PSK Max
+		0x1032: 'PUBLIC_KEY',                         # Public Key
+		0x1033: 'RADIO_ENABLED',                      # Radio Enabled
+		0x1034: 'REBOOT',                             # Reboot
+		0x1035: 'REGISTRAR_CURRENT',                  # Registrar Current
+		0x1036: 'REGISTRAR_ESTABLISHED',              # Registrar Established
+		0x1037: 'REGISTRAR_LIST',                     # Registrar List
+		0x1038: 'REGISTRAR_MAX',                      # Registrar Max
+		0x1039: 'REGISTRAR_NONCE',                    # Registrar Nonce
+		0x103a: 'REQUEST_TYPE',                       # Request Type
+		0x103b: 'RESPONSE_TYPE',                      # Response Type
+		0x103c: 'RF_BANDS',                           # RF Bands
+		0x103d: 'R_HASH1',                            # R Hash1
+		0x103e: 'R_HASH2',                            # R Hash2
+		0x103f: 'R_SNONCE1',                          # R Snonce1
+		0x1040: 'R_SNONCE2',                          # R Snonce2
+		0x1041: 'SELECTED_REGISTRAR',                 # Selected Registrar
+		0x1042: 'SERIAL_NUMBER',                      # Serial Number
+		0x1044: 'WIFI_PROTECTED_SETUP_STATE',         # Wifi Protected Setup State
+		0x1045: 'SSID',                               # SSID
+		0x1046: 'TOTAL_NETWORKS',                     # Total Networks
+		0x1047: 'UUID_E',                             # UUID E
+		0x1048: 'UUID_R',                             # UUID R
+		0x1049: 'VENDOR_EXTENSION',                   # Vendor Extension
+		0x104a: 'VERSION',                            # Version
+		0x104b: 'X509_CERTIFICATE_REQUEST',           # X509 Certificate Request
+		0x104c: 'X509_CERTIFICATE',                   # X509 Certificate
+		0x104d: 'EAP_IDENTITY',                       # EAP Identity
+		0x104e: 'MESSAGE_COUNTER',                    # Message Counter
+		0x104f: 'PUBLIC_KEY_HASH',                    # Public Key Hash
+		0x1050: 'REKEY_KEY',                          # Rekey Key
+		0x1051: 'KEY_LIFETIME',                       # Key Lifetime
+		0x1052: 'PERMITTED_CONFIG_METHODS',           # Permitted Config Methods
+		0x1053: 'SELECTED_REGISTRAR_CONFIG_METHODS',  # Selected Registrar Config Methods
+		0x1054: 'PRIMARY_DEVICE_TYPE',                # Primary Device Type
+		0x1055: 'SECONDARY_DEVICE_TYPE_LIST',         # Secondary Device Type List
+		0x1056: 'PORTABLE_DEVICE',                    # Portable Device
+		0x1057: 'AP_SETUP_LOCKED',                    # Ap Setup Locked
+		0x1058: 'APPLICATION_EXTENSION',              # Application Extension
+		0x1059: 'EAP_TYPE',                           # EAP Type
+		0x1060: 'INITIALIZATION_VECTOR',              # Initialization Vector
+		0x1061: 'KEY_PROVIDED_AUTOMATICALLY',         # Key Provided Automatically
+		0x1062: '8021X_ENABLED',                      # 8021x Enabled
+		0x1063: 'APPSESSIONKEY',                      # AppSessionKey
+		0x1064: 'WEPTRANSMITKEY',                     # WEPTransmitKey
+		0x106a: 'REQUESTED_DEV_TYPE'                  # Requested Device Type
 	}
 
 import struct
