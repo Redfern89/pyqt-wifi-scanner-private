@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import struct
+from dataclasses import dataclass
 
 ######################
 #       Utils        #
@@ -831,7 +832,58 @@ class IEEE80211_DEFS:
 		0x106a: 'REQUESTED_DEV_TYPE'                  # Requested Device Type
 	}
 
+	vendor_specific_types = {
+		0: 'Unknown',
+		1: 'WPA', 
+		2: 'WMM_WME', 
+		4: 'WPS', 
+		17: 'Net_Cost', 
+		18: 'Tethering'
+	}
+
 import struct
+
+@dataclass
+class RadioTap:
+	it_version: int
+	it_pad: int
+	it_len: int
+	it_presents: list
+
+@dataclass
+class RadioTap_Present:
+	type: int
+	name: str
+	data: any
+
+@dataclass
+class Dot11EltIE:
+	ID: int
+	name: str
+	LEN: int
+	INFO: any
+
+@dataclass
+class VENDOR_SPECIFIC_IE:
+	oui: str
+	type: int
+	name: str
+	data: bytes
+
+@dataclass
+class rsn_suite:
+	type: int
+	name: str
+	oui: str
+
+@dataclass
+class RSN_IE:
+	version: int
+	group_cipher: rsn_suite
+	pair_cnt: int
+	pair_suites: list
+	akm_cnt: int
+	akm_suites: list
 
 class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self):
@@ -850,37 +902,42 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 		offset = 8
 		for i in range(pairwise_cnt):
 			pairwise = rsn[offset:offset+4]
-			pairwise_suites.append({
-				'oui': self.mac2str(pairwise[0:3]),
-				'suite': {
-					pairwise[3]: self.rsn_cipher_suites.get(pairwise[3], 0)
-				}
-			})
+			pairwise_suites.append(rsn_suite(type=pairwise[3], name=self.rsn_cipher_suites.get(pairwise[3], 0), oui=self.mac2str(pairwise[0:3])))
 			offset += 4
 
 		akm_suites_cnt = rsn[offset]
 		offset += 2
 		for i in range(akm_suites_cnt):
 			akm = rsn[offset:offset+4]
-			akm_suites.append({
-				'oui': self.mac2str(akm[0:3]),
-				'akm': {
-					akm[3]: self.rsn_akm_suites.get(akm[3], 0)
-				}
-			})
+			akm_suites.append(rsn_suite(type=akm[3], name=self.rsn_akm_suites.get(akm[3], 0), oui=self.mac2str(akm[0:3])))
 			offset += 4
 
-		return {
-			'version': version,
-			'group_cipher': {
-				'oui': self.mac2str(group_cipher_oui),
-				'group': {
-					group_cipher_ver: self.rsn_cipher_suites.get(group_cipher_ver, 0)
-				}
-			},
-			'pairwise': pairwise_suites,
-			'akm': akm_suites
-		}
+		return RSN_IE(
+			version=version,
+			group_cipher=rsn_suite(
+				type=group_cipher_ver,
+				name=self.rsn_cipher_suites.get(group_cipher_ver, 0),
+				oui=self.mac2str(group_cipher_oui)
+			),
+			pair_cnt=pairwise_cnt,
+			pair_suites=pairwise_suites,
+			akm_cnt=akm_suites_cnt,
+			akm_suites=akm_suites
+		)
+
+	def ssid(self, ssid):
+		return ssid.decode(errors="ignore")
+
+	def vendor_specific(self, vendor_specific):
+		vendor_oui = vendor_specific[:3]
+		vendor_type = vendor_specific[3]
+		vendor_data = vendor_specific[4:]
+		vendor_name = self.vendor_specific_types.get(vendor_type, 0)
+
+		return VENDOR_SPECIFIC_IE(oui=self.mac2str(vendor_oui), type=vendor_type, name=vendor_name, data=vendor_data)
+
+	def default(self, val):
+		return val
 
 # Разложи меня по байтам, если сможешь
 # Тут собраны парсеры IEEE802.11 фреймов
@@ -1271,7 +1328,14 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			offset = self.dot11_start + self.return_dot11_length + self.ieee80211_elt_candidates[frame_control]
 			# Узнаем новый размер пакета
 			packet_length = len(self.pkt[offset:])
-			result = {}
+			result = []
+			
+			elt_parsers = Dot11EltParsers()
+			handlers = {
+				0: elt_parsers.ssid,
+				48: elt_parsers.parse_rsn,
+				221: elt_parsers.vendor_specific
+			}
 
 			# Проверяем - есть ли контрольная сумма FCS (4 байта) в конце пакета
 			rt_flags = self.return_RadioTap_PresentFlag('Flags')
@@ -1290,7 +1354,11 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 				ID = pkt[offset]
 				LEN = pkt[offset+1]
 				INFO = pkt[offset+2:offset+2+LEN]
-				result[self.elt_tags_struct.get(ID, 0)] = INFO
+				handler = handlers.get(ID, elt_parsers.default)
+				name = self.elt_tags_struct.get(ID, 0)
+
+				result.append(Dot11EltIE(ID=ID, name=name, LEN=LEN, INFO=handler(INFO)))
+
 				offset += 2 + LEN
 			return result
 			# Честно сказать, я еще не решил, что делать, если что-то не так пойдет
