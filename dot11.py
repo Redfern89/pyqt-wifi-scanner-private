@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import struct
+import oui
 from dataclasses import dataclass
 
 ######################
@@ -832,6 +833,18 @@ class IEEE80211_DEFS:
 		0x106a: 'REQUESTED_DEV_TYPE'                  # Requested Device Type
 	}
 
+	wps_wfa_struct = {
+		0x00: 'VERSION2',
+		0x01: 'AUTHORIZEDMACS',
+		0x02: 'NETWORK_KEY_SHAREABLE',
+		0x03: 'REQUEST_TO_ENROLL',
+		0x04: 'SETTINGS_DELAY_TIME',
+		0x05: 'REG_CFG_METHODS',
+		0x06: 'MULTI_AP',
+		0x07: 'MULTI_AP_PROFILE',
+		0x08: 'MULTI_AP_8021Q'	
+	}
+
 	vendor_specific_types = {
 		0: 'Unknown',
 		1: 'WPA', 
@@ -866,6 +879,7 @@ class Dot11EltIE:
 @dataclass
 class VENDOR_SPECIFIC_IE:
 	oui: str
+	oui_name: str
 	type: int
 	name: str
 	data: bytes
@@ -905,6 +919,24 @@ class WPA_IE:
 	unicast_suites: list
 	akm_cnt: 1
 	akm_suites: list
+	
+@dataclass
+class WPS_IE:
+	ID: int
+	name: str
+	INFO: any
+
+@dataclass
+class WPS_WFA:
+	ID: int
+	LEN: int
+	name: str
+	INFO: any
+	
+@dataclass
+class VENDOR_EXTENSION:
+	ID: int
+	extensions: list
 
 class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self):
@@ -996,16 +1028,63 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 	def ssid(self, ssid):
 		return ssid.decode(errors="ignore")
 
+	def parse_wps(self, wps):
+		offset = 0
+		wps_ie_len = len(wps)
+		result = []
+		
+		while (offset +4 <= wps_ie_len):
+			TAG = struct.unpack('>H', wps[offset:offset+2])[0]
+			LEN = struct.unpack('>H', wps[offset+2:offset+4])[0]
+			INFO = wps[offset +4:offset+4+LEN]
+			
+			if TAG == 0x1049:
+				vendor_ext_offset = 0
+				vendor_id = INFO[:3]
+				vendor_ext_data = INFO[3:]
+				vendor_ext_data_len = len(vendor_ext_data)
+				vendor_extensions = []
+				
+				while (vendor_ext_offset +2 <= vendor_ext_data_len):
+					vendor_ext_TAG = vendor_ext_data[vendor_ext_offset]
+					vendor_ext_LEN = vendor_ext_data[vendor_ext_offset +1]
+					vendor_ext_DATA = vendor_ext_data[vendor_ext_offset+2:vendor_ext_offset+2+vendor_ext_LEN]
+						
+					vendor_extensions.append(WPS_WFA(
+						ID=vendor_ext_TAG,
+						LEN=vendor_ext_LEN,
+						name=self.wps_wfa_struct.get(vendor_ext_TAG, None),
+						INFO=vendor_ext_DATA
+						)
+					)
+					vendor_ext_offset += 2 + vendor_ext_LEN
+				INFO=VENDOR_EXTENSION(ID=vendor_id, extensions=vendor_extensions)
+				
+			result.append(WPS_IE(
+				ID=TAG,
+				name=self.wps_tlv_struct.get(TAG, 0),
+				INFO=INFO
+				)
+			)
+			
+			offset += 4 + LEN
+			
+		return result
+
 	def vendor_specific(self, vendor_specific):
-		vendor_oui = vendor_specific[:3]
+		vendor_oui = self.mac2str(vendor_specific[:3]).upper()
 		vendor_type = vendor_specific[3]
 		vendor_data = vendor_specific[4:]
 		vendor_name = self.vendor_specific_types.get(vendor_type, 0)
-
-		if vendor_type == 1:
-			vendor_data = self.parse_wpa(vendor_data)
+		vendor_oui_name = oui.OUI.get(vendor_oui, 'Unknown')
 		
-		return VENDOR_SPECIFIC_IE(oui=self.mac2str(vendor_oui), type=vendor_type, name=vendor_name, data=vendor_data)
+		if vendor_oui == '00:50:F2':
+			if vendor_type == 1:
+				vendor_data = self.parse_wpa(vendor_data)
+			if vendor_type == 4:
+				vendor_data = self.parse_wps(vendor_data)
+		
+		return VENDOR_SPECIFIC_IE(oui=vendor_oui, oui_name=vendor_oui_name, type=vendor_type, name=vendor_name, data=vendor_data)
 
 	def default(self, val):
 		return val
