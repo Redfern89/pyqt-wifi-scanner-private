@@ -871,7 +871,7 @@ class VENDOR_SPECIFIC_IE:
 	data: bytes
 
 @dataclass
-class rsn_suite:
+class suite_field:
 	type: int
 	name: str
 	oui: str
@@ -879,15 +879,47 @@ class rsn_suite:
 @dataclass
 class RSN_IE:
 	version: int
-	group_cipher: rsn_suite
+	group_cipher: suite_field
 	pair_cnt: int
 	pair_suites: list
 	akm_cnt: int
 	akm_suites: list
 
+@dataclass
+class sub_country_info:
+	first_channel: int
+	channels: int
+	max_tx_power: int
+
+@dataclass
+class COUNTRY_INFO:
+	code: str
+	env: int
+	info: sub_country_info
+
+@dataclass
+class WPA_IE:
+	version: int
+	multicast_suite: suite_field
+	unicast_cnt: int
+	unicast_suites: list
+	akm_cnt: 1
+	akm_suites: list
+
 class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self):
 		pass
+	
+	def parse_country_info(self, country_info):
+		return COUNTRY_INFO(
+			code=country_info[0:2].decode(errors="ignore"),
+			env=country_info[2],
+			info=sub_country_info(
+				first_channel=country_info[3],
+				channels=country_info[4],
+				max_tx_power=country_info[5]
+			)
+		)
 
 	def parse_rsn(self, rsn):
 		version = struct.unpack('<H', rsn[0:2])[0]
@@ -902,25 +934,61 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 		offset = 8
 		for i in range(pairwise_cnt):
 			pairwise = rsn[offset:offset+4]
-			pairwise_suites.append(rsn_suite(type=pairwise[3], name=self.rsn_cipher_suites.get(pairwise[3], 0), oui=self.mac2str(pairwise[0:3])))
+			pairwise_suites.append(suite_field(type=pairwise[3], name=self.rsn_cipher_suites.get(pairwise[3], 0), oui=self.mac2str(pairwise[0:3])))
 			offset += 4
 
 		akm_suites_cnt = rsn[offset]
 		offset += 2
 		for i in range(akm_suites_cnt):
 			akm = rsn[offset:offset+4]
-			akm_suites.append(rsn_suite(type=akm[3], name=self.rsn_akm_suites.get(akm[3], 0), oui=self.mac2str(akm[0:3])))
+			akm_suites.append(suite_field(type=akm[3], name=self.rsn_akm_suites.get(akm[3], 0), oui=self.mac2str(akm[0:3])))
 			offset += 4
 
 		return RSN_IE(
 			version=version,
-			group_cipher=rsn_suite(
+			group_cipher=suite_field(
 				type=group_cipher_ver,
 				name=self.rsn_cipher_suites.get(group_cipher_ver, 0),
 				oui=self.mac2str(group_cipher_oui)
 			),
 			pair_cnt=pairwise_cnt,
 			pair_suites=pairwise_suites,
+			akm_cnt=akm_suites_cnt,
+			akm_suites=akm_suites
+		)
+
+	def parse_wpa(self, rsn):
+		version = struct.unpack('<H', rsn[0:2])[0]
+		group_cipher = rsn[2:6]
+		group_cipher_oui = group_cipher[0:3]
+		group_cipher_ver = group_cipher[3]
+		pairwise_cnt = rsn[6]
+
+		pairwise_suites = []
+		akm_suites = []
+
+		offset = 8
+		for i in range(pairwise_cnt):
+			pairwise = rsn[offset:offset+4]
+			pairwise_suites.append(suite_field(type=pairwise[3], name=self.rsn_cipher_suites.get(pairwise[3], 0), oui=self.mac2str(pairwise[0:3])))
+			offset += 4
+
+		akm_suites_cnt = rsn[offset]
+		offset += 2
+		for i in range(akm_suites_cnt):
+			akm = rsn[offset:offset+4]
+			akm_suites.append(suite_field(type=akm[3], name=self.rsn_akm_suites.get(akm[3], 0), oui=self.mac2str(akm[0:3])))
+			offset += 4
+
+		return WPA_IE(
+			version=version,
+			multicast_suite=suite_field(
+				type=group_cipher_ver,
+				name=self.rsn_cipher_suites.get(group_cipher_ver, 0),
+				oui=self.mac2str(group_cipher_oui)
+			),
+			unicast_cnt=pairwise_cnt,
+			unicast_suites=pairwise_suites,
 			akm_cnt=akm_suites_cnt,
 			akm_suites=akm_suites
 		)
@@ -934,6 +1002,9 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 		vendor_data = vendor_specific[4:]
 		vendor_name = self.vendor_specific_types.get(vendor_type, 0)
 
+		if vendor_type == 1:
+			vendor_data = self.parse_wpa(vendor_data)
+		
 		return VENDOR_SPECIFIC_IE(oui=self.mac2str(vendor_oui), type=vendor_type, name=vendor_name, data=vendor_data)
 
 	def default(self, val):
@@ -1333,6 +1404,7 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			elt_parsers = Dot11EltParsers()
 			handlers = {
 				0: elt_parsers.ssid,
+				7: elt_parsers.parse_country_info,
 				48: elt_parsers.parse_rsn,
 				221: elt_parsers.vendor_specific
 			}
