@@ -586,6 +586,7 @@ class DeauthDialog(QDialog):
 		deauth_timeout = self.deauth_timeout_edit.value()
 
 		wifi_inject = WiFiInject(self.interface, self.bssid, self.client)
+		#wifi_inject = WiFiInject(self.interface, 'ff:ff:ff:ff:ff:ff', 'ff:ff:ff:ff:ff:ff')
 		wifi_inject.deauth(reason_code, deauth_attempts, deauth_packets, deauth_timeout, self.deauth_log_callback)
 		self.deauth_button.setEnabled(True)
 

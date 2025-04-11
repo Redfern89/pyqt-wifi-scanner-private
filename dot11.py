@@ -857,17 +857,28 @@ class IEEE80211_DEFS:
 import struct
 
 @dataclass
-class RadioTap:
-	it_version: int
-	it_pad: int
-	it_len: int
-	it_presents: list
+class bitfield:
+	bit: int
+	name: str
 
 @dataclass
-class RadioTap_Present:
-	type: int
-	name: str
-	data: any
+class FrameControl:
+	type_subtype: int
+	flags: int
+
+@dataclass
+class Dot11:
+	fc: FrameControl
+	duration: int
+	addr1: str
+	addr2: any
+	addr3: any
+	addr4: any
+	frag: any
+	seq: any
+	cipher_iv: any
+	ht_control: any
+	qos_control: any
 
 @dataclass
 class Dot11EltIE:
@@ -900,7 +911,7 @@ class RSN_IE:
 	akm_suites: list
 
 @dataclass
-class sub_country_info:
+class radio_info:
 	first_channel: int
 	channels: int
 	max_tx_power: int
@@ -909,7 +920,7 @@ class sub_country_info:
 class COUNTRY_INFO:
 	code: str
 	env: int
-	info: sub_country_info
+	info: radio_info
 
 @dataclass
 class WPA_IE:
@@ -938,15 +949,36 @@ class VENDOR_EXTENSION:
 	ID: int
 	extensions: list
 
+@dataclass
+class DS_PARAMETER:
+	channel: int
+
 class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 	def __init__(self):
 		pass
+
+	def parse_rates(self, data):
+		rates = []
+		for byte in data:
+			rates.append((byte & 0x7f) * 0.5)
+
+		return rates
+
+	def parse_Ext_rates(self, data):
+		rates = []
+		for byte in data:
+			rates.append(byte / 2)
+
+		return rates
+	
+	def parse_ds(self, data):
+		return DS_PARAMETER(channel=data[0])
 	
 	def parse_country_info(self, country_info):
 		return COUNTRY_INFO(
 			code=country_info[0:2].decode(errors="ignore"),
 			env=country_info[2],
-			info=sub_country_info(
+			info=radio_info(
 				first_channel=country_info[3],
 				channels=country_info[4],
 				max_tx_power=country_info[5]
@@ -1040,26 +1072,27 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 			
 			if TAG == 0x1049:
 				vendor_ext_offset = 0
-				vendor_id = INFO[:3]
+				vendor_id = self.mac2str(INFO[:3])
 				vendor_ext_data = INFO[3:]
 				vendor_ext_data_len = len(vendor_ext_data)
 				vendor_extensions = []
 				
-				while (vendor_ext_offset +2 <= vendor_ext_data_len):
-					vendor_ext_TAG = vendor_ext_data[vendor_ext_offset]
-					vendor_ext_LEN = vendor_ext_data[vendor_ext_offset +1]
-					vendor_ext_DATA = vendor_ext_data[vendor_ext_offset+2:vendor_ext_offset+2+vendor_ext_LEN]
-						
-					vendor_extensions.append(WPS_WFA(
-						ID=vendor_ext_TAG,
-						LEN=vendor_ext_LEN,
-						name=self.wps_wfa_struct.get(vendor_ext_TAG, None),
-						INFO=vendor_ext_DATA
+				if vendor_id == '00:37:2a':
+					while (vendor_ext_offset +2 <= vendor_ext_data_len):
+						vendor_ext_TAG = vendor_ext_data[vendor_ext_offset]
+						vendor_ext_LEN = vendor_ext_data[vendor_ext_offset +1]
+						vendor_ext_DATA = vendor_ext_data[vendor_ext_offset+2:vendor_ext_offset+2+vendor_ext_LEN]
+							
+						vendor_extensions.append(WPS_WFA(
+							ID=vendor_ext_TAG,
+							LEN=vendor_ext_LEN,
+							name=self.wps_wfa_struct.get(vendor_ext_TAG, None),
+							INFO=vendor_ext_DATA
+							)
 						)
-					)
-					vendor_ext_offset += 2 + vendor_ext_LEN
-				INFO=VENDOR_EXTENSION(ID=vendor_id, extensions=vendor_extensions)
-				
+						vendor_ext_offset += 2 + vendor_ext_LEN
+					INFO=VENDOR_EXTENSION(ID=vendor_id, extensions=vendor_extensions)
+					
 			result.append(WPS_IE(
 				ID=TAG,
 				name=self.wps_tlv_struct.get(TAG, 0),
@@ -1239,11 +1272,17 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 	# Типа «ага, вот тут у нас есть protected, тут retry, а вот тут — ну чисто блестяшка, order bit».
 	def return_dot11_framecontrol_flags(self):
 		_frame_control_flags = self.pkt[self.dot11_start+1]
-		frame_control_flags = {}
+		frame_control_flags = []
 
 		for bit in range(8):
 			if _frame_control_flags & (1 << bit):
-				frame_control_flags[bit] = { bit: self.ieee80211_fc_flags[bit] }
+				#frame_control_flags[bit] = { bit: self.ieee80211_fc_flags[bit] }
+				frame_control_flags.append(
+					bitfield(
+						bit=bit, 
+						name=self.ieee80211_fc_flags[bit]
+					)
+				)
 
 		return frame_control_flags
 	
@@ -1254,8 +1293,9 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 	def return_dot11_addrs(self):	
 		frame_control = self.return_Dot11_frame_control()
 		addrs = {}
-		if frame_control:
+		if not frame_control is None:
 			pkt = self.pkt[self.dot11_start:]
+
 			if frame_control in self.ieee80211_fc_types.values():
 				addrs['addr1'] = self.mac2str(pkt[4:10])
 
@@ -1361,6 +1401,37 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			length += 2 # Frament/Sequence
 
 		return length
+	
+	def return_Dot11(self):
+		fc = self.return_Dot11_frame_control()
+		flags = self.return_dot11_framecontrol_flags()
+		duration = self.return_dot11_duration()
+		addrs = self.return_dot11_addrs()
+		iv = self.return_Dot11_Cipher_IV()
+		frag_seq = self.return_dot11_frag_seq()
+		frag = None
+		seq = None
+
+		if not frag_seq is None:
+			frag = frag_seq.get('frag', None)
+			seq = frag_seq.get('seq', None)
+
+		return Dot11(
+			FrameControl(
+				type_subtype=fc,
+				flags=flags
+			),
+			duration=duration,
+			addr1=addrs.get('addr1', None),
+			addr2=addrs.get('addr2', None),
+			addr3=addrs.get('addr3', None),
+			addr4=None,
+			frag=frag,
+			seq=seq,
+			cipher_iv=iv,
+			ht_control=None,
+			qos_control=None
+		)
 	
 	# О, beacon — визитка точки доступа.
 	# Берём offset от длины заголовка, читаем timestamp, beacon interval (ну почти, ты ж знаешь как), capabilities.
@@ -1483,8 +1554,11 @@ class Dot11Parser(IEEE80211_DEFS, IEEE80211_Utils):
 			elt_parsers = Dot11EltParsers()
 			handlers = {
 				0: elt_parsers.ssid,
+				1: elt_parsers.parse_rates,
+				3: elt_parsers.parse_ds,
 				7: elt_parsers.parse_country_info,
 				48: elt_parsers.parse_rsn,
+				50: elt_parsers.parse_Ext_rates,
 				221: elt_parsers.vendor_specific
 			}
 

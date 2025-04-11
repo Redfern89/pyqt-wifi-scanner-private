@@ -51,7 +51,7 @@ def send_beacons():
 			pb.RadioTap() + \
 			pb.Dot11(0x80, 'ff:ff:ff:ff:ff:ff', bssid, bssid, frag=0, seq=SC) + \
 			pb.Dot11Beacon(capabilities=0x00) + \
-			pb.Dot11Elt(0, essid)
+			pb.Dot11TLV(0, essid)
 
 		pcap.sendpacket(packet)
 		SC += 1
