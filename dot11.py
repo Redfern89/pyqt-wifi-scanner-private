@@ -483,7 +483,7 @@ class IEEE80211_DEFS:
 		0x03: "WRAP",
 		0x04: "CCMP",
 		0x05: "WEP-104",
-		0x06: "CMAC-128",
+		0x06: "BIP",
 		0x07: "CMAC-128",
 		0x08: "GCMP-128",
 		0x09: "GCMP-256",
@@ -854,6 +854,9 @@ class IEEE80211_DEFS:
 		18: 'Tethering'
 	}
 
+	wfa_vendor_id = b'\x00\x37\x2a'
+	ms_vendor_id = b'\x00\x50\xf2'
+
 import struct
 
 @dataclass
@@ -890,7 +893,6 @@ class Dot11EltIE:
 @dataclass
 class VENDOR_SPECIFIC_IE:
 	oui: str
-	oui_name: str
 	type: int
 	name: str
 	data: bytes
@@ -909,6 +911,10 @@ class RSN_IE:
 	pair_suites: list
 	akm_cnt: int
 	akm_suites: list
+	rsn_capabilities: int
+	pmk_id_count: int
+	pmk_id_list: any
+	group_management_cipher: any
 
 @dataclass
 class radio_info:
@@ -987,39 +993,78 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 
 	def parse_rsn(self, rsn):
 		version = struct.unpack('<H', rsn[0:2])[0]
-		group_cipher = rsn[2:6]
-		group_cipher_oui = group_cipher[0:3]
-		group_cipher_ver = group_cipher[3]
-		pairwise_cnt = rsn[6]
+		group_cipher_oui = rsn[2:5]
+		group_cipher_ver = rsn[5]
+		group_cipher = suite_field(
+			type=group_cipher_ver,
+			name=self.rsn_cipher_suites.get(group_cipher_ver, "Unknown"),
+			oui=self.mac2str(group_cipher_oui)
+		)
 
-		pairwise_suites = []
-		akm_suites = []
-
+		pairwise_cnt = struct.unpack('<H', rsn[6:8])[0]
 		offset = 8
-		for i in range(pairwise_cnt):
-			pairwise = rsn[offset:offset+4]
-			pairwise_suites.append(suite_field(type=pairwise[3], name=self.rsn_cipher_suites.get(pairwise[3], 0), oui=self.mac2str(pairwise[0:3])))
+		pairwise_suites = []
+		for _ in range(pairwise_cnt):
+			suite = rsn[offset:offset+4]
+			pairwise_suites.append(suite_field(
+				type=suite[3],
+				name=self.rsn_cipher_suites.get(suite[3], "Unknown"),
+				oui=self.mac2str(suite[0:3])
+			))
 			offset += 4
 
-		akm_suites_cnt = rsn[offset]
+		akm_cnt = struct.unpack('<H', rsn[offset:offset+2])[0]
 		offset += 2
-		for i in range(akm_suites_cnt):
-			akm = rsn[offset:offset+4]
-			akm_suites.append(suite_field(type=akm[3], name=self.rsn_akm_suites.get(akm[3], 0), oui=self.mac2str(akm[0:3])))
+		akm_suites = []
+		for _ in range(akm_cnt):
+			suite = rsn[offset:offset+4]
+			akm_suites.append(suite_field(
+				type=suite[3],
+				name=self.rsn_akm_suites.get(suite[3], "Unknown"),
+				oui=self.mac2str(suite[0:3])
+			))
 			offset += 4
+
+		rsn_capabilities = pmkid_count = 0
+		pmkid_list = None
+		group_management_cipher = None
+
+		if offset + 2 <= len(rsn):
+			rsn_capabilities = struct.unpack('<H', rsn[offset:offset+2])[0]
+			offset += 2
+
+		if offset + 2 <= len(rsn):
+			pmkid_count = struct.unpack('<H', rsn[offset:offset+2])[0]
+			offset += 2
+			if pmkid_count > 0:
+				pmkid_list = []
+				for _ in range(pmkid_count):
+					pmkid = rsn[offset:offset+16]
+					pmkid_list.append(pmkid)
+					offset += 16
+
+		if offset + 4 <= len(rsn):
+			oui = rsn[offset:offset+3]
+			cipher_type = rsn[offset+3]
+			group_management_cipher = suite_field(
+				type=cipher_type,
+				name=self.rsn_cipher_suites.get(cipher_type, "Unknown"),
+				oui=self.mac2str(oui)
+			)
 
 		return RSN_IE(
 			version=version,
-			group_cipher=suite_field(
-				type=group_cipher_ver,
-				name=self.rsn_cipher_suites.get(group_cipher_ver, 0),
-				oui=self.mac2str(group_cipher_oui)
-			),
+			group_cipher=group_cipher,
 			pair_cnt=pairwise_cnt,
 			pair_suites=pairwise_suites,
-			akm_cnt=akm_suites_cnt,
-			akm_suites=akm_suites
+			akm_cnt=akm_cnt,
+			akm_suites=akm_suites,
+			rsn_capabilities=rsn_capabilities,
+			pmk_id_count=pmkid_count,
+			pmk_id_list=pmkid_list,
+			group_management_cipher=group_management_cipher
 		)
+
 
 	def parse_wpa(self, rsn):
 		version = struct.unpack('<H', rsn[0:2])[0]
@@ -1072,12 +1117,12 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 			
 			if TAG == 0x1049:
 				vendor_ext_offset = 0
-				vendor_id = self.mac2str(INFO[:3])
+				vendor_id = INFO[:3]
 				vendor_ext_data = INFO[3:]
 				vendor_ext_data_len = len(vendor_ext_data)
 				vendor_extensions = []
 				
-				if vendor_id == '00:37:2a':
+				if vendor_id == self.wfa_vendor_id:
 					while (vendor_ext_offset +2 <= vendor_ext_data_len):
 						vendor_ext_TAG = vendor_ext_data[vendor_ext_offset]
 						vendor_ext_LEN = vendor_ext_data[vendor_ext_offset +1]
@@ -1091,7 +1136,7 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 							)
 						)
 						vendor_ext_offset += 2 + vendor_ext_LEN
-					INFO=VENDOR_EXTENSION(ID=vendor_id, extensions=vendor_extensions)
+					INFO=VENDOR_EXTENSION(ID=self.mac2str(vendor_id), extensions=vendor_extensions)
 					
 			result.append(WPS_IE(
 				ID=TAG,
@@ -1105,19 +1150,18 @@ class Dot11EltParsers(IEEE80211_DEFS, IEEE80211_Utils):
 		return result
 
 	def vendor_specific(self, vendor_specific):
-		vendor_oui = self.mac2str(vendor_specific[:3]).upper()
+		vendor_oui = vendor_specific[:3]
 		vendor_type = vendor_specific[3]
 		vendor_data = vendor_specific[4:]
 		vendor_name = self.vendor_specific_types.get(vendor_type, 0)
-		vendor_oui_name = oui.OUI.get(vendor_oui, 'Unknown')
 		
-		if vendor_oui == '00:50:F2':
+		if vendor_oui == self.ms_vendor_id:
 			if vendor_type == 1:
 				vendor_data = self.parse_wpa(vendor_data)
 			if vendor_type == 4:
 				vendor_data = self.parse_wps(vendor_data)
 		
-		return VENDOR_SPECIFIC_IE(oui=vendor_oui, oui_name=vendor_oui_name, type=vendor_type, name=vendor_name, data=vendor_data)
+		return VENDOR_SPECIFIC_IE(oui=self.mac2str(vendor_oui), type=vendor_type, name=vendor_name, data=vendor_data)
 
 	def default(self, val):
 		return val
